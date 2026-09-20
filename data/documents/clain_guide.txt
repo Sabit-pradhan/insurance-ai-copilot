@@ -1,0 +1,32 @@
+INSURANCE CLAIM GUIDE - DEMO DOCUMENT
+
+Claim Registration
+
+A policyholder should report the insurance claim as soon as possible after
+the incident. The claim should include the policy number, incident date,
+claim type, and a brief description of the incident.
+
+Documents Required for Claim Submission
+
+The following documents may be required for claim processing:
+
+1. Completed claim form
+2. Copy of the insurance policy
+3. Identity proof of the policyholder
+4. Incident report or supporting evidence
+5. Bills, invoices, or repair estimates where applicable
+6. Bank account details for settlement
+
+Claim Processing
+
+After receiving the claim, the insurer reviews the submitted documents
+and may request additional information if required.
+
+Claim Settlement
+
+After verification and approval, the eligible settlement amount is
+processed according to the applicable policy terms.
+
+IMPORTANT:
+This is a demo document created only for testing the Insurance AI Copilot
+RAG pipeline. It is not an actual insurance policy.
