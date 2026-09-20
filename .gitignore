@@ -5,3 +5,6 @@ __pycache__/
 .ipynb_checkpoints/
 .vscode/
 *.log
+
+# Generated RAG vector index
+artifacts/rag_index/

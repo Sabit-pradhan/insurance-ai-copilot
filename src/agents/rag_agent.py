@@ -1,72 +1,122 @@
 # src/agents/rag_agent.py
 
 from src.utils.llm import llm
-from src.rag.rag_service import retrieve_documents
+from src.rag.vector_store import semantic_search
+from src.core.config import settings
+from src.core.logger import get_logger
+
+
+# --------------------------------------------------
+# Logger
+# --------------------------------------------------
+
+logger = get_logger(__name__)
 
 
 # --------------------------------------------------
 # RAG Agent
 # --------------------------------------------------
 
-def ask_rag_agent(question: str):
+def ask_rag_agent(
+    question: str
+) -> dict:
     """
-    Answer insurance document questions
-    using retrieved document context only.
+    Answer insurance document questions using
+    semantic retrieval + LLM grounded generation.
     """
 
-    # Step 1: Retrieve relevant chunks
-    retrieved_chunks = retrieve_documents(
-        question=question,
-        top_k=4
-    )
-
-
-    # --------------------------------------------------
-    # No relevant document found
-    # --------------------------------------------------
-
-    if not retrieved_chunks:
+    if not question or not question.strip():
 
         return {
-            "question": question,
-            "answer": (
-                "I could not find relevant information "
-                "in the available insurance documents."
-            ),
+            "status": "error",
+            "agent": "rag",
+            "answer": "Question cannot be empty.",
             "sources": []
         }
 
+    logger.info(
+        f"RAG question received: {question}"
+    )
 
-    # --------------------------------------------------
-    # Build context for LLM
-    # --------------------------------------------------
+    try:
 
-    context_parts = []
+        # --------------------------------------------------
+        # Step 1: Semantic Search
+        # --------------------------------------------------
 
-    for chunk in retrieved_chunks:
-
-        context_parts.append(
-            f"""
-SOURCE: {chunk['source']}
-CHUNK: {chunk['chunk_number']}
-
-CONTENT:
-{chunk['text']}
-"""
+        chunks = semantic_search(
+            question=question,
+            top_k=settings.RAG_TOP_K
         )
 
-    context = "\n".join(context_parts)
+        if not chunks:
+
+            return {
+                "status": "success",
+                "agent": "rag",
+                "question": question,
+                "answer": (
+                    "I could not find relevant information "
+                    "in the available insurance documents."
+                ),
+                "sources": []
+            }
 
 
-    # --------------------------------------------------
-    # Grounded RAG Prompt
-    # --------------------------------------------------
+        # --------------------------------------------------
+        # Step 2: Build LLM Context
+        # --------------------------------------------------
 
-    prompt = f"""
-You are an Insurance AI Copilot.
+        context_parts = []
 
-Answer the user's question using ONLY the
-document context provided below.
+        for item in chunks:
+
+            source = item["source"]
+            page = item.get("page")
+            chunk = item["chunk"]
+            text = item["text"]
+
+            location = (
+                f"Page {page}"
+                if page is not None
+                else f"Chunk {chunk}"
+            )
+
+            context_parts.append(
+                f"""
+SOURCE: {source}
+LOCATION: {location}
+
+{text}
+"""
+            )
+
+
+        context = "\n\n---\n\n".join(
+            context_parts
+        )
+
+
+        # --------------------------------------------------
+        # Step 3: Grounded Prompt
+        # --------------------------------------------------
+
+        prompt = f"""
+You are an Insurance Document Assistant.
+
+Answer the user's question ONLY using the provided
+document context.
+
+Rules:
+
+1. Do not use outside knowledge.
+2. Do not invent policy conditions.
+3. If the answer is not available in the context,
+   clearly say that the information is not available
+   in the provided documents.
+4. Keep the answer clear and concise.
+5. Do not treat demo documents as official policy documents.
+6. Mention the source document when useful.
 
 DOCUMENT CONTEXT:
 
@@ -76,62 +126,83 @@ USER QUESTION:
 
 {question}
 
-RULES:
-
-1. Use only information from DOCUMENT CONTEXT.
-2. Do not invent insurance rules or policy details.
-3. If the context does not contain enough information,
-   say:
-   "The available documents do not contain enough
-   information to answer this question."
-4. Keep the answer concise and business-friendly.
-5. Mention the relevant source document name.
-6. Do not use outside knowledge.
-7. Return only the final answer.
+ANSWER:
 """
 
-    # Step 2: Generate answer using NVIDIA/OpenRouter
-    response = llm.invoke(prompt)
 
-    answer = response.content.strip()
+        # --------------------------------------------------
+        # Step 4: LLM Answer
+        # --------------------------------------------------
 
-
-    # --------------------------------------------------
-    # Collect unique source names
-    # --------------------------------------------------
-
-    sources = list(
-        dict.fromkeys(
-            chunk["source"]
-            for chunk in retrieved_chunks
+        response = llm.invoke(
+            prompt
         )
-    )
+
+        answer = response.content.strip()
 
 
-    # --------------------------------------------------
-    # Final result
-    # --------------------------------------------------
+        # --------------------------------------------------
+        # Step 5: Build Citations
+        # --------------------------------------------------
 
-    return {
-        "question": question,
-        "answer": answer,
-        "sources": sources,
-        "retrieved_chunks": retrieved_chunks
-    }
+        sources = []
+
+        for item in chunks:
+
+            source_info = {
+                "source": item["source"],
+                "chunk": item["chunk"],
+                "score": round(
+                    item["score"],
+                    4
+                )
+            }
+
+            if item.get("page") is not None:
+
+                source_info["page"] = (
+                    item["page"]
+                )
+
+            sources.append(
+                source_info
+            )
 
 
-# --------------------------------------------------
-# Quick Test
-# --------------------------------------------------
+        logger.info(
+            f"RAG answer generated using "
+            f"{len(chunks)} chunk(s)"
+        )
 
-if __name__ == "__main__":
 
-    question = (
-        "What documents are required "
-        "for an insurance claim?"
-    )
+        # --------------------------------------------------
+        # Final Response
+        # --------------------------------------------------
 
-    result = ask_rag_agent(question)
+        return {
+            "status": "success",
+            "agent": "rag",
+            "question": question,
+            "answer": answer,
+            "sources": sources,
+            "retrieved_chunks": len(chunks)
+        }
 
-    print("\nRAG Agent Result:")
-    print(result)
+
+    except Exception as error:
+
+        logger.exception(
+            "RAG Agent failed"
+        )
+
+        return {
+            "status": "error",
+            "agent": "rag",
+            "question": question,
+            "answer": (
+                "The document retrieval service "
+                "encountered an error."
+            ),
+            "error": str(error),
+            "sources": []
+        }

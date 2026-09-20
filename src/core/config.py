@@ -16,9 +16,8 @@ class Settings:
     """
     Central application configuration.
 
-    Instead of reading environment variables
-    separately in every file, all configuration
-    comes from this class.
+    All important project settings are managed
+    from one place.
     """
 
     # --------------------------------------------------
@@ -40,10 +39,17 @@ class Settings:
 
     DB_USER = os.getenv("DB_USER")
     DB_PASSWORD = os.getenv("DB_PASSWORD")
-    DB_HOST = os.getenv("DB_HOST", "localhost")
+
+    DB_HOST = os.getenv(
+        "DB_HOST",
+        "localhost"
+    )
 
     DB_PORT = int(
-        os.getenv("DB_PORT", "5432")
+        os.getenv(
+            "DB_PORT",
+            "5432"
+        )
     )
 
     DB_NAME = os.getenv("DB_NAME")
@@ -74,7 +80,7 @@ class Settings:
     # Maximum rows returned by SQL Agent
     SQL_MAX_ROWS = 100
 
-    # Stop SQL queries after 10 seconds
+    # Stop long-running SQL after 10 seconds
     SQL_STATEMENT_TIMEOUT_MS = 10_000
 
 
@@ -82,8 +88,29 @@ class Settings:
     # RAG Configuration
     # --------------------------------------------------
 
-    # Number of document chunks retrieved
+    # Maximum number of chunks retrieved
     RAG_TOP_K = 4
+
+    # Minimum semantic similarity score.
+    # Chunks below this value will be ignored.
+    RAG_MIN_SCORE = 0.45
+
+    # Embedding model used for semantic search
+    EMBEDDING_MODEL = os.getenv(
+        "EMBEDDING_MODEL",
+        "liquid/lfm-2.5-embedding-350m:free"
+    )
+
+    # Size of each document chunk
+    RAG_CHUNK_SIZE = 1000
+
+    # Overlap between consecutive chunks
+    RAG_CHUNK_OVERLAP = 150
+
+    # Location where semantic index will be stored
+    RAG_INDEX_DIR = (
+        "artifacts/rag_index"
+    )
 
 
     # --------------------------------------------------
@@ -93,7 +120,7 @@ class Settings:
     # Deterministic responses
     LLM_TEMPERATURE = 0
 
-    # LLM request timeout
+    # Maximum wait time for LLM request
     LLM_TIMEOUT_SECONDS = 60
 
 
