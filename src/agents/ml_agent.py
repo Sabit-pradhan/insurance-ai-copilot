@@ -37,7 +37,7 @@ RENEWAL_FEATURES = [
     "POLICY_TYPE",
     "SALES_CHANNEL",
     "PAYMENT_MODE",
-    "RISK_BAND"
+    "RISK_BAND",
 ]
 
 
@@ -61,7 +61,7 @@ FRAUD_FEATURES = [
     "CUSTOMER_RISK_SEGMENT",
     "POLICY_TYPE",
     "PAYMENT_MODE",
-    "RISK_BAND"
+    "RISK_BAND",
 ]
 
 
@@ -73,7 +73,7 @@ UNDERWRITING_FEATURES = [
     "LIFESTYLE",
     "MEDICAL_HISTORY_FLAG",
     "SMOKER_FLAG",
-    "OCCUPATION_RISK"
+    "OCCUPATION_RISK",
 ]
 
 
@@ -81,7 +81,7 @@ UNDERWRITING_FEATURES = [
 # Detect which ML model should be used
 # --------------------------------------------------
 
-def detect_ml_task(question: str):
+def detect_ml_task(question: str) -> str:
     """
     Detect whether the user wants:
     renewal, fraud, underwriting, or unknown.
@@ -144,7 +144,10 @@ USER QUESTION:
 # Validate model features
 # --------------------------------------------------
 
-def validate_features(input_data: dict, required_features: list):
+def validate_features(
+    input_data: dict,
+    required_features: list
+) -> list:
     """
     Find features required by the model
     but missing from input_data.
@@ -163,7 +166,10 @@ def validate_features(input_data: dict, required_features: list):
 # Complete ML Agent
 # --------------------------------------------------
 
-def ask_ml_agent(question: str, input_data: dict):
+def ask_ml_agent(
+    question: str,
+    input_data: dict
+) -> dict:
     """
     Complete flow:
 
@@ -176,7 +182,6 @@ def ask_ml_agent(question: str, input_data: dict):
 
     # Step 1: Detect which model is required
     task = detect_ml_task(question)
-
 
     # ------------------------------------------------
     # Renewal Model
@@ -193,11 +198,12 @@ def ask_ml_agent(question: str, input_data: dict):
             return {
                 "task": "renewal",
                 "error": "Missing required features",
-                "missing_features": missing_features
+                "missing_features": missing_features,
             }
 
-        prediction = predict_renewal(input_data)
-
+        prediction = predict_renewal(
+            input_data
+        )
 
     # ------------------------------------------------
     # Fraud Model
@@ -214,11 +220,12 @@ def ask_ml_agent(question: str, input_data: dict):
             return {
                 "task": "fraud",
                 "error": "Missing required features",
-                "missing_features": missing_features
+                "missing_features": missing_features,
             }
 
-        prediction = predict_fraud(input_data)
-
+        prediction = predict_fraud(
+            input_data
+        )
 
     # ------------------------------------------------
     # Underwriting Model
@@ -235,11 +242,12 @@ def ask_ml_agent(question: str, input_data: dict):
             return {
                 "task": "underwriting",
                 "error": "Missing required features",
-                "missing_features": missing_features
+                "missing_features": missing_features,
             }
 
-        prediction = predict_underwriting(input_data)
-
+        prediction = predict_underwriting(
+            input_data
+        )
 
     # ------------------------------------------------
     # Unknown Request
@@ -252,18 +260,17 @@ def ask_ml_agent(question: str, input_data: dict):
             "error": (
                 "Could not determine which ML model "
                 "should handle this request."
-            )
+            ),
         }
 
-
     # ------------------------------------------------
-    # Final response
+    # Final Response
     # ------------------------------------------------
 
     return {
         "task": task,
         "question": question,
-        "prediction": prediction
+        "prediction": prediction,
     }
 
 
@@ -273,9 +280,13 @@ def ask_ml_agent(question: str, input_data: dict):
 
 if __name__ == "__main__":
 
-    question = "Evaluate this applicant for underwriting"
+    # Uppercase names are used because these variables
+    # exist at module scope during this quick test.
+    TEST_QUESTION = (
+        "Evaluate this applicant for underwriting"
+    )
 
-    sample_data = {
+    SAMPLE_DATA = {
         "AGE": 37,
         "HEALTH_SCORE": 63,
         "BMI": 26.0,
@@ -283,13 +294,13 @@ if __name__ == "__main__":
         "LIFESTYLE": "Good",
         "MEDICAL_HISTORY_FLAG": "No",
         "SMOKER_FLAG": "No",
-        "OCCUPATION_RISK": "Medium"
+        "OCCUPATION_RISK": "Medium",
     }
 
-    result = ask_ml_agent(
-        question=question,
-        input_data=sample_data
+    TEST_RESULT = ask_ml_agent(
+        question=TEST_QUESTION,
+        input_data=SAMPLE_DATA
     )
 
     print("\nML Agent Result:")
-    print(result)
+    print(TEST_RESULT)
