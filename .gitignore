@@ -8,3 +8,5 @@ __pycache__/
 
 # Generated RAG vector index
 artifacts/rag_index/
+
+.pytest_cache/
