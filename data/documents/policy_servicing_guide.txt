@@ -1,0 +1,38 @@
+INSURANCE POLICY SERVICING GUIDE - DEMO DOCUMENT
+
+Policy Servicing
+
+Policy servicing refers to activities performed after an insurance policy has been issued.
+
+Common Policy Service Requests
+
+Policyholders may request services such as:
+
+1. Updating contact information
+2. Updating nominee or beneficiary information where applicable
+3. Requesting policy documents
+4. Updating payment-related information
+5. Requesting coverage-related changes where permitted
+6. Asking questions about policy status
+
+Policy Information
+
+A policy servicing team may review:
+
+1. Policy number
+2. Customer information
+3. Policy status
+4. Policy start date
+5. Policy end date
+6. Premium information
+7. Payment information
+
+Document Verification
+
+Some service requests may require identity or supporting-document verification before changes are processed.
+
+IMPORTANT:
+
+This is a demo document created only for testing the Insurance AI Copilot RAG pipeline.
+
+It is not an actual insurance servicing manual.

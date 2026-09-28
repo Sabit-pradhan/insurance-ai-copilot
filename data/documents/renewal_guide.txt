@@ -1,0 +1,38 @@
+INSURANCE POLICY RENEWAL GUIDE - DEMO DOCUMENT
+
+Policy Renewal
+
+A policy renewal allows an existing insurance policy to continue for another policy period, subject to applicable renewal terms.
+
+Renewal Review
+
+Before renewal, the insurer may review information such as:
+
+1. Existing policy details
+2. Previous premium amount
+3. Claim history
+4. Payment history
+5. Customer risk information
+6. Updated coverage requirements
+
+Premium Changes
+
+The renewal premium may differ from the previous premium.
+
+Possible factors may include:
+
+1. Changes in risk profile
+2. Previous claims
+3. Coverage changes
+4. Pricing revisions
+5. Applicable underwriting considerations
+
+Renewal Decision
+
+The policyholder may choose to accept or decline the renewal offer according to the available renewal terms.
+
+IMPORTANT:
+
+This is a demo document created only for testing the Insurance AI Copilot RAG pipeline.
+
+It is not an actual insurance policy or official renewal guideline.

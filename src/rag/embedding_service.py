@@ -1,7 +1,9 @@
 # src/rag/embedding_service.py
 
+import os
+
 import numpy as np
-from openai import OpenAI
+from langchain_ollama import OllamaEmbeddings
 
 from src.core.config import settings
 from src.core.logger import get_logger
@@ -10,86 +12,120 @@ from src.core.logger import get_logger
 logger = get_logger(__name__)
 
 
-if not settings.OPENROUTER_API_KEY:
-    raise ValueError(
-        "OPENROUTER_API_KEY is missing from environment variables."
-    )
+# ==========================================================
+# OLLAMA CONFIG
+# ==========================================================
 
-
-client = OpenAI(
-    api_key=settings.OPENROUTER_API_KEY,
-    base_url=settings.OPENROUTER_BASE_URL,
-    timeout=settings.LLM_TIMEOUT_SECONDS
+OLLAMA_BASE_URL = getattr(
+    settings,
+    "OLLAMA_BASE_URL",
+    os.getenv(
+        "OLLAMA_BASE_URL",
+        "http://127.0.0.1:11434",
+    ),
 )
 
 
+EMBEDDING_MODEL = os.getenv(
+    "OLLAMA_EMBEDDING_MODEL",
+    "nomic-embed-text",
+)
+
+
+# ==========================================================
+# INITIALIZE EMBEDDING MODEL
+# ==========================================================
+
+embedding_model = OllamaEmbeddings(
+    model=EMBEDDING_MODEL,
+    base_url=OLLAMA_BASE_URL,
+)
+
+
+# ==========================================================
+# NORMALIZATION
+# ==========================================================
+
 def normalize_embeddings(
-    vectors: np.ndarray
+    vectors: np.ndarray,
 ) -> np.ndarray:
     """
     Normalize vectors to unit length.
+
+    After normalization:
+        dot product = cosine similarity
     """
+
+    if vectors.size == 0:
+        return vectors
 
     norms = np.linalg.norm(
         vectors,
         axis=1,
-        keepdims=True
+        keepdims=True,
     )
 
-    norms[norms == 0] = 1.0
+    norms[
+        norms == 0
+    ] = 1.0
 
-    return vectors / norms
+    return (
+        vectors
+        / norms
+    )
 
+
+# ==========================================================
+# EMBED DOCUMENTS
+# ==========================================================
 
 def embed_texts(
-    texts: list[str]
+    texts: list[str],
 ) -> np.ndarray:
     """
-    Convert multiple text strings into
-    semantic embedding vectors.
+    Generate local semantic embeddings
+    using Ollama.
     """
 
     if not texts:
+
         return np.empty(
             (0, 0),
-            dtype=np.float32
+            dtype=np.float32,
         )
 
     cleaned_texts = [
         text.strip()
         for text in texts
-        if text and text.strip()
+        if text
+        and text.strip()
     ]
 
     if not cleaned_texts:
+
         return np.empty(
             (0, 0),
-            dtype=np.float32
+            dtype=np.float32,
         )
 
     logger.info(
-        f"Generating embeddings for "
-        f"{len(cleaned_texts)} text(s)"
+        f"Generating local embeddings "
+        f"for {len(cleaned_texts)} text(s) "
+        f"using {EMBEDDING_MODEL}"
     )
 
     try:
 
-        response = client.embeddings.create(
-            model=settings.EMBEDDING_MODEL,
-            input=cleaned_texts
-        )
-
-        ordered_data = sorted(
-            response.data,
-            key=lambda item: item.index
+        vectors = (
+            embedding_model
+            .embed_documents(
+                cleaned_texts
+            )
         )
 
         vectors = np.asarray(
-            [
-                item.embedding
-                for item in ordered_data
-            ],
-            dtype=np.float32
+            vectors,
+            dtype=np.float32,
         )
 
         vectors = normalize_embeddings(
@@ -106,52 +142,111 @@ def embed_texts(
     except Exception:
 
         logger.exception(
-            "Embedding generation failed"
+            "Local embedding generation failed"
         )
 
         raise
 
 
+# ==========================================================
+# EMBED QUERY
+# ==========================================================
+
 def embed_query(
-    question: str
+    question: str,
 ) -> np.ndarray:
     """
-    Convert one user question into
-    one semantic embedding vector.
+    Generate one normalized query embedding.
     """
 
-    if not question or not question.strip():
+    if (
+        not question
+        or not question.strip()
+    ):
 
         raise ValueError(
             "Question cannot be empty."
         )
 
-    vectors = embed_texts(
-        [question]
-    )
+    try:
 
-    return vectors[0]
+        vector = (
+            embedding_model
+            .embed_query(
+                question.strip()
+            )
+        )
 
+        vector = np.asarray(
+            vector,
+            dtype=np.float32,
+        )
+
+        norm = np.linalg.norm(
+            vector
+        )
+
+        if norm > 0:
+
+            vector = (
+                vector
+                / norm
+            )
+
+        return vector
+
+    except Exception:
+
+        logger.exception(
+            "Query embedding generation failed"
+        )
+
+        raise
+
+
+# ==========================================================
+# QUICK TEST
+# ==========================================================
 
 if __name__ == "__main__":
 
-    test_text = (
+    question = (
         "What documents are required "
         "for an insurance claim?"
     )
 
     vector = embed_query(
-        test_text
+        question
     )
 
-    print("\nEmbedding Model:")
-    print(settings.EMBEDDING_MODEL)
+    print(
+        "\nEmbedding Model:"
+    )
 
-    print("\nEmbedding Dimension:")
-    print(len(vector))
+    print(
+        EMBEDDING_MODEL
+    )
 
-    print("\nFirst 5 Values:")
-    print(vector[:5])
+    print(
+        "\nEmbedding Dimension:"
+    )
 
-    print("\nVector Norm:")
-    print(np.linalg.norm(vector))
+    print(
+        len(vector)
+    )
+
+    print(
+        "\nFirst 5 values:"
+    )
+
+    print(
+        vector[:5]
+    )
+
+    print(
+        "\nVector Norm:"
+    )
+
+    print(
+        np.linalg.norm(vector)
+    )

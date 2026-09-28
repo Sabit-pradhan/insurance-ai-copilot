@@ -1,0 +1,42 @@
+INSURANCE CLAIM RISK REVIEW GUIDE - DEMO DOCUMENT
+
+Claim Risk Review
+
+The Insurance AI Copilot may generate a fraud-risk probability to support claim investigation prioritization.
+
+A high fraud-risk score does not prove that fraud occurred.
+
+Risk Indicators
+
+Potential investigation signals may include:
+
+1. Unusually large claim amounts
+2. Unusual reporting delays
+3. Inconsistent claim information
+4. Claim characteristics that differ from expected patterns
+5. Repeated suspicious activity patterns
+6. Risk indicators identified by analytical models
+
+Investigation Process
+
+A flagged claim may be prioritized for additional review.
+
+Possible review activities may include:
+
+1. Reviewing submitted claim documents
+2. Checking incident information
+3. Reviewing available supporting evidence
+4. Comparing claim information with policy information
+5. Requesting additional information when necessary
+
+Human Review
+
+Fraud-risk predictions are investigation-support signals only.
+
+They should not be treated as accusations or final fraud determinations.
+
+IMPORTANT:
+
+This is a demo document created only for testing the Insurance AI Copilot RAG pipeline.
+
+It is not an official fraud investigation policy.

@@ -1,58 +1,223 @@
 # src/utils/llm.py
 
-from langchain_openai import ChatOpenAI
+import os
+import re
+import logging
 
-from src.core.config import settings
-from src.core.logger import get_logger
-
-
-# --------------------------------------------------
-# Logger
-# --------------------------------------------------
-
-logger = get_logger(__name__)
+from dotenv import load_dotenv
+from ollama import Client
+from langchain_core.messages import AIMessage
 
 
-# --------------------------------------------------
-# Validate configuration
-# --------------------------------------------------
+# ==========================================================
+# ENVIRONMENT
+# ==========================================================
 
-if not settings.OPENROUTER_API_KEY:
+load_dotenv()
 
-    raise ValueError(
-        "OPENROUTER_API_KEY is missing from environment variables."
+
+# ==========================================================
+# LOGGER
+# ==========================================================
+
+logger = logging.getLogger(__name__)
+
+
+# ==========================================================
+# OLLAMA CONFIG
+# ==========================================================
+
+OLLAMA_BASE_URL = os.getenv(
+    "OLLAMA_BASE_URL",
+    "http://127.0.0.1:11434",
+)
+
+OLLAMA_MODEL = os.getenv(
+    "OLLAMA_MODEL",
+    "qwen3:4b",
+)
+
+
+# ==========================================================
+# RESPONSE CLEANING
+# ==========================================================
+
+def clean_model_output(
+    text: str,
+) -> str:
+    """
+    Remove Qwen thinking output and stray thinking tags.
+    """
+
+    if not text:
+        return ""
+
+    # Remove full thinking blocks
+    text = re.sub(
+        r"<think>.*?</think>",
+        "",
+        text,
+        flags=re.DOTALL | re.IGNORECASE,
     )
 
+    # Remove stray opening/closing tags
+    text = re.sub(
+        r"</?think>",
+        "",
+        text,
+        flags=re.IGNORECASE,
+    )
 
-# --------------------------------------------------
-# Shared Production LLM Client
-# --------------------------------------------------
+    return text.strip()
 
-logger.info(
-    f"Initializing LLM model: {settings.OPENROUTER_MODEL}"
+
+# ==========================================================
+# LOCAL OLLAMA CLIENT
+# ==========================================================
+
+client = Client(
+    host=OLLAMA_BASE_URL
 )
 
 
-llm = ChatOpenAI(
+# ==========================================================
+# LLM WRAPPER
+# ==========================================================
 
-    # NVIDIA Nemotron through OpenRouter
-    model=settings.OPENROUTER_MODEL,
+class LocalOllamaLLM:
+    """
+    Small compatibility wrapper.
 
-    api_key=settings.OPENROUTER_API_KEY,
+    Existing code can continue using:
 
-    base_url=settings.OPENROUTER_BASE_URL,
+        llm.invoke(prompt).content
 
-    # Deterministic output
-    temperature=settings.LLM_TEMPERATURE,
+    Internally we use Ollama directly with:
 
-    # Do not wait forever if provider has a problem
-    timeout=settings.LLM_TIMEOUT_SECONDS,
+        think=False
+    """
 
-    # Automatically retry temporary API failures
-    max_retries=2
+    def __init__(
+        self,
+        model: str,
+    ):
+
+        self.model = model
+
+        logger.info(
+            "Initializing native Ollama model: %s",
+            self.model,
+        )
+
+    def invoke(
+        self,
+        prompt,
+        **kwargs,
+    ) -> AIMessage:
+        """
+        Send prompt to local Ollama.
+
+        Returns a LangChain AIMessage so existing
+        agents can continue using response.content.
+        """
+
+        # --------------------------------------------------
+        # Convert prompt to string
+        # --------------------------------------------------
+
+        if isinstance(
+            prompt,
+            str,
+        ):
+
+            prompt_text = prompt
+
+        else:
+
+            prompt_text = str(
+                prompt
+            )
+
+        # --------------------------------------------------
+        # Native Ollama call
+        # --------------------------------------------------
+
+        response = client.chat(
+            model=self.model,
+
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt_text,
+                }
+            ],
+
+            # Disable Qwen reasoning mode
+            think=False,
+
+            # Keep model loaded between requests
+            keep_alive="10m",
+
+            options={
+                "temperature": 0,
+                "num_ctx": 4096,
+                "num_predict": 512,
+            },
+        )
+
+        # --------------------------------------------------
+        # Extract content
+        # --------------------------------------------------
+
+        raw_content = (
+            response.message.content
+            or ""
+        )
+
+        # --------------------------------------------------
+        # Final global safety cleanup
+        # --------------------------------------------------
+
+        clean_content = clean_model_output(
+            raw_content
+        )
+
+        return AIMessage(
+            content=clean_content
+        )
+
+
+# ==========================================================
+# SHARED LLM OBJECT
+# ==========================================================
+
+llm = LocalOllamaLLM(
+    model=OLLAMA_MODEL
 )
 
 
-logger.info(
-    "LLM client initialized successfully"
-)
+# ==========================================================
+# QUICK TEST
+# ==========================================================
+
+if __name__ == "__main__":
+
+    response = llm.invoke(
+        "Answer in one sentence: What is insurance?"
+    )
+
+    print(
+        "\nMODEL:"
+    )
+
+    print(
+        OLLAMA_MODEL
+    )
+
+    print(
+        "\nRESPONSE:"
+    )
+
+    print(
+        response.content
+    )

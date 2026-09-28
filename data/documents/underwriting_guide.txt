@@ -1,0 +1,46 @@
+INSURANCE UNDERWRITING GUIDE - DEMO DOCUMENT
+
+Underwriting
+
+Insurance underwriting is the process of evaluating information associated with an insurance application to support a risk decision.
+
+Risk Assessment
+
+The underwriting review may consider information such as:
+
+1. Age
+2. Health score
+3. Body Mass Index
+4. Smoking status
+5. Lifestyle information
+6. Medical history indicators
+7. Occupation risk
+8. Credit-related information where applicable
+
+Possible Underwriting Outcomes
+
+For this demo system, underwriting decision-support outcomes may include:
+
+1. Approved
+2. Loading
+3. Declined
+
+Loading
+
+A loading represents an increase applied to the base premium when additional risk is identified.
+
+The demo calculation can be represented as:
+
+Loaded Premium = Base Premium × (1 + Loading Percentage / 100)
+
+Human Review
+
+Model-generated underwriting predictions should be treated as decision-support information.
+
+A qualified human reviewer should make the final underwriting decision.
+
+IMPORTANT:
+
+This is a demo document created only for testing the Insurance AI Copilot RAG pipeline.
+
+It is not an official underwriting manual and must not be used as an autonomous eligibility decision system.

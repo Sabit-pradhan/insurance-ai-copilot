@@ -1,20 +1,26 @@
+import uuid
+
+import pandas as pd
 import requests
 import streamlit as st
-from textwrap import dedent
 
 
 # ==========================================================
 # CONFIGURATION
 # ==========================================================
 
-API_BASE_URL = "http://127.0.0.1:8000"
+API_BASE_URL = "http://127.0.0.1:8001"
 
 
 # ==========================================================
-# MODEL CATEGORIES
+# MODEL OPTIONS
 # ==========================================================
 
-GENDER_OPTIONS = ["Other", "Female", "Male"]
+GENDER_OPTIONS = [
+    "Other",
+    "Female",
+    "Male",
+]
 
 MARITAL_STATUS_OPTIONS = [
     "Married",
@@ -131,973 +137,20 @@ OCCUPATION_RISK_OPTIONS = [
 
 
 # ==========================================================
-# PAGE CONFIGURATION
+# PAGE CONFIG
 # ==========================================================
 
 st.set_page_config(
     page_title="INSURE AI",
-    page_icon="◈",
+    page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
 
 # ==========================================================
-# HTML HELPERS
-# ==========================================================
-
-def clean_html(content: str) -> str:
-    """
-    Remove blank lines and extra indentation so Streamlit
-    renders HTML instead of displaying it as text/code.
-    """
-
-    content = dedent(content).strip()
-
-    lines = [
-        line.strip()
-        for line in content.splitlines()
-        if line.strip()
-    ]
-
-    return "\n".join(lines)
-
-
-def render_html(content: str):
-
-    st.markdown(
-        clean_html(content),
-        unsafe_allow_html=True,
-    )
-
-
-def render_sidebar_html(content: str):
-
-    st.sidebar.markdown(
-        clean_html(content),
-        unsafe_allow_html=True,
-    )
-
-
-# ==========================================================
-# CUSTOM CSS
-# ==========================================================
-
-st.markdown(
-    """
-<style>
-
-/* ========================================================
-   APP BACKGROUND
-======================================================== */
-
-.stApp {
-    background:
-        radial-gradient(
-            circle at 85% 15%,
-            rgba(20, 95, 255, 0.17),
-            transparent 30%
-        ),
-        radial-gradient(
-            circle at 70% 80%,
-            rgba(100, 55, 255, 0.13),
-            transparent 30%
-        ),
-        radial-gradient(
-            circle at 5% 85%,
-            rgba(0, 190, 220, 0.07),
-            transparent 25%
-        ),
-        linear-gradient(
-            135deg,
-            #020409 0%,
-            #07101d 45%,
-            #050712 100%
-        );
-
-    background-size: 180% 180%;
-    animation: backgroundMove 18s ease infinite;
-}
-
-
-@keyframes backgroundMove {
-
-    0% {
-        background-position: 0% 50%;
-    }
-
-    50% {
-        background-position: 100% 50%;
-    }
-
-    100% {
-        background-position: 0% 50%;
-    }
-}
-
-
-/* ========================================================
-   PAGE WIDTH
-======================================================== */
-
-.block-container {
-    max-width: 1500px;
-    padding-top: 1.8rem;
-    padding-bottom: 4rem;
-}
-
-
-/* ========================================================
-   SIDEBAR
-======================================================== */
-
-[data-testid="stSidebar"] {
-    background: rgba(3, 6, 14, 0.96);
-    border-right: 1px solid rgba(148, 163, 184, 0.09);
-}
-
-
-/* ========================================================
-   BRAND
-======================================================== */
-
-.brand-wrap {
-    display: flex;
-    align-items: center;
-    gap: 13px;
-    margin: 5px 0 25px 0;
-}
-
-
-.brand-symbol {
-    width: 54px;
-    height: 54px;
-
-    display: flex;
-    align-items: center;
-    justify-content: center;
-
-    border-radius: 16px;
-
-    background:
-        linear-gradient(
-            145deg,
-            #1769ff,
-            #5947ff,
-            #00a9c7
-        );
-
-    color: white;
-
-    font-size: 18px;
-    font-weight: 900;
-    letter-spacing: 1px;
-
-    box-shadow:
-        0 0 30px
-        rgba(37, 99, 235, 0.35);
-
-    animation:
-        logoGlow
-        4s ease-in-out infinite;
-}
-
-
-@keyframes logoGlow {
-
-    0%,
-    100% {
-        box-shadow:
-            0 0 18px
-            rgba(37, 99, 235, 0.25);
-    }
-
-    50% {
-        box-shadow:
-            0 0 42px
-            rgba(79, 70, 229, 0.55);
-    }
-}
-
-
-.brand-main {
-    color: white;
-    font-size: 21px;
-    font-weight: 900;
-    letter-spacing: 1px;
-}
-
-
-.brand-small {
-    margin-top: 3px;
-    color: #64748b;
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 1.5px;
-}
-
-
-/* ========================================================
-   SIDEBAR NAVIGATION
-======================================================== */
-
-[data-testid="stSidebar"] div[role="radiogroup"] {
-    display: flex;
-    flex-direction: column;
-    gap: 7px;
-}
-
-
-[data-testid="stSidebar"] div[role="radiogroup"] label {
-
-    padding: 11px 13px;
-
-    border-radius: 11px;
-
-    background:
-        rgba(255, 255, 255, 0.018);
-
-    border:
-        1px solid transparent;
-
-    transition:
-        all 0.25s ease;
-}
-
-
-[data-testid="stSidebar"] div[role="radiogroup"] label:hover {
-
-    transform:
-        translateX(4px);
-
-    background:
-        rgba(37, 99, 235, 0.10);
-
-    border-color:
-        rgba(59, 130, 246, 0.20);
-}
-
-
-/* ========================================================
-   STATUS
-======================================================== */
-
-.online-status {
-
-    display: inline-flex;
-
-    align-items: center;
-
-    gap: 8px;
-
-    padding:
-        7px 12px;
-
-    border-radius:
-        25px;
-
-    color:
-        #86efac;
-
-    background:
-        rgba(34, 197, 94, 0.08);
-
-    border:
-        1px solid
-        rgba(34, 197, 94, 0.17);
-
-    font-size:
-        11px;
-
-    font-weight:
-        700;
-}
-
-
-.online-dot {
-
-    width:
-        7px;
-
-    height:
-        7px;
-
-    border-radius:
-        50%;
-
-    background:
-        #22c55e;
-
-    box-shadow:
-        0 0 10px
-        #22c55e;
-
-    animation:
-        pulseDot
-        1.6s infinite;
-}
-
-
-@keyframes pulseDot {
-
-    0%,
-    100% {
-        opacity: 0.4;
-    }
-
-    50% {
-        opacity: 1;
-    }
-}
-
-
-.offline-status {
-
-    display: inline-flex;
-
-    padding:
-        7px 12px;
-
-    border-radius:
-        25px;
-
-    background:
-        rgba(239, 68, 68, 0.08);
-
-    color:
-        #fca5a5;
-
-    font-size:
-        11px;
-
-    font-weight:
-        700;
-}
-
-
-/* ========================================================
-   HOME HERO
-======================================================== */
-
-.home-hero {
-
-    min-height:
-        570px;
-
-    display:
-        flex;
-
-    align-items:
-        center;
-}
-
-
-.hero-tag {
-
-    color:
-        #60a5fa;
-
-    font-size:
-        11px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        2.2px;
-
-    margin-bottom:
-        15px;
-}
-
-
-.hero-title {
-
-    margin:
-        0;
-
-    color:
-        #f8fafc;
-
-    font-size:
-        clamp(
-            62px,
-            8vw,
-            110px
-        );
-
-    line-height:
-        0.84;
-
-    letter-spacing:
-        -5px;
-
-    font-weight:
-        950;
-}
-
-
-.hero-title span {
-
-    background:
-        linear-gradient(
-            90deg,
-            #ffffff,
-            #93c5fd,
-            #818cf8
-        );
-
-    -webkit-background-clip:
-        text;
-
-    -webkit-text-fill-color:
-        transparent;
-}
-
-
-.hero-description {
-
-    max-width:
-        560px;
-
-    margin-top:
-        28px;
-
-    color:
-        #94a3b8;
-
-    font-size:
-        17px;
-
-    line-height:
-        1.7;
-}
-
-
-.capability-list {
-
-    margin-top:
-        27px;
-
-    color:
-        #cbd5e1;
-
-    font-size:
-        12px;
-
-    font-weight:
-        750;
-
-    letter-spacing:
-        1px;
-
-    line-height:
-        2.1;
-}
-
-
-.capability-list span {
-
-    color:
-        #3b82f6;
-
-    margin-right:
-        8px;
-}
-
-
-/* ========================================================
-   HOME MOSAIC
-======================================================== */
-
-.mosaic {
-
-    position:
-        relative;
-
-    min-height:
-        570px;
-
-    width:
-        100%;
-}
-
-
-.mosaic-card {
-
-    position:
-        absolute;
-
-    overflow:
-        hidden;
-
-    padding:
-        22px;
-
-    border:
-        1px solid
-        rgba(255, 255, 255, 0.08);
-
-    border-radius:
-        6px;
-
-    box-shadow:
-        0 30px 70px
-        rgba(0, 0, 0, 0.35);
-
-    transition:
-        all 0.35s ease;
-}
-
-
-.mosaic-card:hover {
-
-    transform:
-        translateY(-6px)
-        scale(1.01);
-
-    border-color:
-        rgba(96, 165, 250, 0.30);
-
-    box-shadow:
-        0 35px 90px
-        rgba(37, 99, 235, 0.16);
-}
-
-
-.card-copilot {
-
-    top:
-        15px;
-
-    left:
-        14%;
-
-    width:
-        71%;
-
-    height:
-        210px;
-
-    background:
-        linear-gradient(
-            145deg,
-            rgba(5, 24, 46, 0.98),
-            rgba(6, 57, 76, 0.82)
-        );
-}
-
-
-.card-renewal {
-
-    top:
-        188px;
-
-    left:
-        0;
-
-    width:
-        56%;
-
-    height:
-        205px;
-
-    background:
-        linear-gradient(
-            145deg,
-            rgba(20, 22, 40, 0.98),
-            rgba(49, 46, 129, 0.78)
-        );
-}
-
-
-.card-fraud {
-
-    top:
-        266px;
-
-    right:
-        0;
-
-    width:
-        47%;
-
-    height:
-        175px;
-
-    background:
-        linear-gradient(
-            145deg,
-            rgba(43, 14, 27, 0.98),
-            rgba(127, 29, 29, 0.67)
-        );
-}
-
-
-.card-underwriting {
-
-    top:
-        405px;
-
-    left:
-        24%;
-
-    width:
-        57%;
-
-    height:
-        145px;
-
-    background:
-        linear-gradient(
-            145deg,
-            rgba(8, 28, 35, 0.98),
-            rgba(15, 118, 110, 0.57)
-        );
-}
-
-
-.mosaic-label {
-
-    color:
-        rgba(255, 255, 255, 0.50);
-
-    font-size:
-        10px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        1.5px;
-}
-
-
-.mosaic-title {
-
-    margin-top:
-        9px;
-
-    color:
-        white;
-
-    font-size:
-        24px;
-
-    font-weight:
-        850;
-}
-
-
-.mosaic-text {
-
-    max-width:
-        350px;
-
-    margin-top:
-        8px;
-
-    color:
-        rgba(255, 255, 255, 0.67);
-
-    font-size:
-        13px;
-
-    line-height:
-        1.5;
-}
-
-
-.mosaic-number {
-
-    position:
-        absolute;
-
-    right:
-        18px;
-
-    bottom:
-        7px;
-
-    color:
-        rgba(255, 255, 255, 0.055);
-
-    font-size:
-        72px;
-
-    font-weight:
-        950;
-}
-
-
-/* ========================================================
-   PAGE HEADERS
-======================================================== */
-
-.page-label {
-
-    margin-bottom:
-        7px;
-
-    color:
-        #60a5fa;
-
-    font-size:
-        10px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        2px;
-}
-
-
-.page-title {
-
-    color:
-        white;
-
-    margin:
-        0 0 8px 0;
-
-    font-size:
-        40px;
-
-    font-weight:
-        850;
-
-    letter-spacing:
-        -1px;
-}
-
-
-.page-description {
-
-    max-width:
-        800px;
-
-    margin-bottom:
-        26px;
-
-    color:
-        #94a3b8;
-
-    font-size:
-        14px;
-
-    line-height:
-        1.6;
-}
-
-
-/* ========================================================
-   METRIC CARDS
-======================================================== */
-
-div[data-testid="stMetric"] {
-
-    padding:
-        18px;
-
-    border-radius:
-        15px;
-
-    background:
-        rgba(255, 255, 255, 0.028);
-
-    border:
-        1px solid
-        rgba(148, 163, 184, 0.09);
-}
-
-
-/* ========================================================
-   BUTTONS
-======================================================== */
-
-.stButton > button,
-.stFormSubmitButton > button {
-
-    min-height:
-        44px;
-
-    border-radius:
-        9px;
-
-    border:
-        1px solid
-        rgba(96, 165, 250, 0.20);
-
-    font-weight:
-        700;
-
-    transition:
-        all 0.25s ease;
-}
-
-
-.stButton > button:hover,
-.stFormSubmitButton > button:hover {
-
-    transform:
-        translateY(-2px);
-
-    border-color:
-        #3b82f6;
-
-    box-shadow:
-        0 10px 28px
-        rgba(37, 99, 235, 0.18);
-}
-
-
-/* ========================================================
-   CHAT
-======================================================== */
-
-[data-testid="stChatMessage"] {
-
-    margin-bottom:
-        10px;
-
-    padding:
-        13px;
-
-    border-radius:
-        15px;
-
-    background:
-        rgba(255, 255, 255, 0.025);
-
-    border:
-        1px solid
-        rgba(148, 163, 184, 0.08);
-}
-
-
-.agent-badge {
-
-    display:
-        inline-block;
-
-    margin-top:
-        8px;
-
-    padding:
-        5px 10px;
-
-    border-radius:
-        20px;
-
-    background:
-        rgba(59, 130, 246, 0.09);
-
-    border:
-        1px solid
-        rgba(59, 130, 246, 0.17);
-
-    color:
-        #93c5fd;
-
-    font-size:
-        10px;
-
-    font-weight:
-        800;
-
-    letter-spacing:
-        1px;
-}
-
-
-/* ========================================================
-   FOOTER
-======================================================== */
-
-.footer {
-
-    margin-top:
-        50px;
-
-    padding-top:
-        18px;
-
-    border-top:
-        1px solid
-        rgba(148, 163, 184, 0.08);
-
-    color:
-        #475569;
-
-    text-align:
-        center;
-
-    font-size:
-        11px;
-
-    letter-spacing:
-        0.5px;
-}
-
-
-/* ========================================================
-   SCROLLBAR
-======================================================== */
-
-::-webkit-scrollbar {
-    width:
-        6px;
-}
-
-
-::-webkit-scrollbar-track {
-    background:
-        transparent;
-}
-
-
-::-webkit-scrollbar-thumb {
-
-    border-radius:
-        20px;
-
-    background:
-        rgba(59, 130, 246, 0.32);
-}
-
-</style>
-    """,
-    unsafe_allow_html=True,
-)
-
-
-# ==========================================================
 # API HELPERS
 # ==========================================================
-
-def call_api(endpoint: str, payload: dict):
-
-    try:
-
-        response = requests.post(
-            f"{API_BASE_URL}{endpoint}",
-            json=payload,
-            timeout=90,
-        )
-
-        response.raise_for_status()
-
-        return response.json()
-
-    except requests.RequestException as error:
-
-        st.error(
-            f"Unable to connect to AI service: {error}"
-        )
-
-        return None
-
 
 def backend_is_online():
 
@@ -1115,637 +168,1076 @@ def backend_is_online():
         return False
 
 
+def call_api(
+    endpoint,
+    payload,
+):
+
+    try:
+
+        response = requests.post(
+            f"{API_BASE_URL}{endpoint}",
+            json=payload,
+            timeout=90,
+        )
+
+        response.raise_for_status()
+
+        return response.json()
+
+    except requests.HTTPError as error:
+
+        try:
+
+            detail = error.response.json()
+
+        except Exception:
+
+            detail = str(error)
+
+        st.error(
+            f"API Error: {detail}"
+        )
+
+        return None
+
+    except requests.RequestException as error:
+
+        st.error(
+            f"Unable to connect to FastAPI: {error}"
+        )
+
+        return None
+
+
+def call_get_api(
+    endpoint,
+    params=None,
+):
+
+    try:
+
+        response = requests.get(
+            f"{API_BASE_URL}{endpoint}",
+            params=params,
+            timeout=30,
+        )
+
+        response.raise_for_status()
+
+        return response.json()
+
+    except requests.RequestException as error:
+
+        st.error(
+            f"Monitoring API Error: {error}"
+        )
+
+        return None
+
+
+def clear_copilot_session(
+    session_id,
+):
+
+    if not session_id:
+
+        return False
+
+    try:
+
+        response = requests.delete(
+            (
+                f"{API_BASE_URL}"
+                f"/ask/copilot/session/"
+                f"{session_id}"
+            ),
+            timeout=15,
+        )
+
+        response.raise_for_status()
+
+        return True
+
+    except requests.RequestException:
+
+        return False
+
+
 # ==========================================================
-# SESSION STATE
+# GENERIC HELPERS
 # ==========================================================
 
-NAV_OPTIONS = [
-    "Home",
-    "AI Copilot",
-    "Renewal Intelligence",
-    "Fraud Intelligence",
-    "Underwriting",
-]
+def safe_float(
+    value,
+    default=0.0,
+):
+
+    try:
+
+        if value is None:
+
+            return default
+
+        return float(value)
+
+    except (
+        TypeError,
+        ValueError,
+    ):
+
+        return default
 
 
-if "current_page" not in st.session_state:
-    st.session_state.current_page = "Home"
+# ==========================================================
+# EXPLAINABILITY
+# ==========================================================
 
+def show_explainability(
+    result,
+):
 
-if "pending_page" in st.session_state:
-
-    st.session_state.current_page = (
-        st.session_state.pending_page
+    explainability = (
+        result.get(
+            "explainability"
+        )
+        or
+        {}
     )
 
-    del st.session_state.pending_page
+
+    if (
+        explainability.get(
+            "status"
+        )
+        ==
+        "unavailable"
+    ):
+
+        st.warning(
+            (
+                "Prediction completed, but "
+                "explainability is unavailable."
+            )
+        )
 
 
-if st.session_state.current_page not in NAV_OPTIONS:
-    st.session_state.current_page = "Home"
+        if explainability.get(
+            "error"
+        ):
+
+            with st.expander(
+                "Explainability Error"
+            ):
+
+                st.code(
+                    str(
+                        explainability.get(
+                            "error"
+                        )
+                    )
+                )
+
+        return
 
 
-if "chat_history" not in st.session_state:
-    st.session_state.chat_history = []
+    factors = (
+        explainability.get(
+            "top_factors"
+        )
+        or
+        explainability.get(
+            "top_features"
+        )
+        or
+        []
+    )
 
 
-if "quick_question" not in st.session_state:
-    st.session_state.quick_question = None
+    if not factors:
+
+        return
 
 
-def navigate(page_name: str):
+    st.subheader(
+        "Why the model predicted this"
+    )
 
-    st.session_state.pending_page = page_name
 
-    st.rerun()
+    rows = []
+
+
+    for factor in factors:
+
+        if not isinstance(
+            factor,
+            dict,
+        ):
+
+            continue
+
+
+        effect = str(
+            factor.get(
+                "effect",
+                "",
+            )
+        )
+
+
+        if (
+            "support"
+            in effect.lower()
+        ):
+
+            effect_text = (
+                "Supports prediction"
+            )
+
+        elif (
+            "oppose"
+            in effect.lower()
+        ):
+
+            effect_text = (
+                "Opposes prediction"
+            )
+
+        else:
+
+            effect_text = effect
+
+
+        rows.append(
+            {
+                "Feature":
+                    factor.get(
+                        "feature"
+                    ),
+
+                "Value":
+                    factor.get(
+                        "value"
+                    ),
+
+                "SHAP Value":
+                    factor.get(
+                        "shap_value"
+                    ),
+
+                "Impact":
+                    factor.get(
+                        "absolute_impact"
+                    ),
+
+                "Effect":
+                    effect_text,
+            }
+        )
+
+
+    if rows:
+
+        st.dataframe(
+            pd.DataFrame(
+                rows
+            ),
+            use_container_width=True,
+            hide_index=True,
+        )
+
+
+    if explainability.get(
+        "note"
+    ):
+
+        st.caption(
+            explainability.get(
+                "note"
+            )
+        )
 
 
 # ==========================================================
-# RAG SOURCE RENDERER
+# MONITORING METADATA
 # ==========================================================
 
-def render_sources(sources):
+def show_monitoring(
+    result,
+):
+
+    monitoring = (
+        result.get(
+            "monitoring"
+        )
+        or
+        {}
+    )
+
+
+    if not monitoring:
+
+        return
+
+
+    st.subheader(
+        "Production Metadata"
+    )
+
+
+    c1, c2, c3, c4 = (
+        st.columns(4)
+    )
+
+
+    c1.metric(
+        "Prediction ID",
+        monitoring.get(
+            "prediction_id",
+            "—",
+        ),
+    )
+
+
+    c2.metric(
+        "Model Version",
+        monitoring.get(
+            "model_version",
+            "—",
+        ),
+    )
+
+
+    latency = monitoring.get(
+        "latency_ms"
+    )
+
+
+    if latency is None:
+
+        latency_text = "—"
+
+    else:
+
+        latency_text = (
+            f"{safe_float(latency):.0f} ms"
+        )
+
+
+    c3.metric(
+        "Latency",
+        latency_text,
+    )
+
+
+    c4.metric(
+        "Status",
+        monitoring.get(
+            "status",
+            "Logged",
+        ),
+    )
+
+
+# ==========================================================
+# DATAFRAME HELPERS
+# ==========================================================
+
+def dataframe_from_api(
+    data,
+):
+
+    if data is None:
+
+        return pd.DataFrame()
+
+
+    if isinstance(
+        data,
+        list,
+    ):
+
+        return pd.DataFrame(
+            data
+        )
+
+
+    if isinstance(
+        data,
+        dict,
+    ):
+
+        for key in [
+            "data",
+            "results",
+            "predictions",
+            "items",
+            "models",
+        ]:
+
+            value = data.get(
+                key
+            )
+
+
+            if isinstance(
+                value,
+                list,
+            ):
+
+                return pd.DataFrame(
+                    value
+                )
+
+
+        if (
+            data
+            and
+            all(
+                isinstance(
+                    value,
+                    dict,
+                )
+                for value
+                in data.values()
+            )
+        ):
+
+            rows = []
+
+
+            for (
+                key,
+                value,
+            ) in data.items():
+
+                row = {
+                    "name":
+                        key
+                }
+
+
+                row.update(
+                    value
+                )
+
+
+                rows.append(
+                    row
+                )
+
+
+            return pd.DataFrame(
+                rows
+            )
+
+
+        return pd.DataFrame(
+            [data]
+        )
+
+
+    return pd.DataFrame()
+
+
+def performance_items(
+    data,
+):
+
+    if not data:
+
+        return []
+
+
+    if isinstance(
+        data,
+        list,
+    ):
+
+        return [
+            (
+                item.get(
+                    "model_name",
+                    "Model",
+                ),
+                item,
+            )
+            for item in data
+            if isinstance(
+                item,
+                dict,
+            )
+        ]
+
+
+    if isinstance(
+        data,
+        dict,
+    ):
+
+        if (
+            "model_name"
+            in data
+            and
+            "status"
+            in data
+        ):
+
+            return [
+                (
+                    data.get(
+                        "model_name",
+                        "Model",
+                    ),
+                    data,
+                )
+            ]
+
+
+        if isinstance(
+            data.get(
+                "models"
+            ),
+            dict,
+        ):
+
+            return list(
+                data[
+                    "models"
+                ].items()
+            )
+
+
+        if isinstance(
+            data.get(
+                "results"
+            ),
+            list,
+        ):
+
+            return [
+                (
+                    item.get(
+                        "model_name",
+                        "Model",
+                    ),
+                    item,
+                )
+                for item
+                in data[
+                    "results"
+                ]
+                if isinstance(
+                    item,
+                    dict,
+                )
+            ]
+
+
+        return [
+            (
+                key,
+                value,
+            )
+            for (
+                key,
+                value,
+            ) in data.items()
+            if isinstance(
+                value,
+                dict,
+            )
+        ]
+
+
+    return []
+
+
+# ==========================================================
+# COPILOT HELPERS
+# ==========================================================
+
+def get_copilot_answer(
+    response,
+):
+
+    if not response:
+
+        return (
+            "No response returned."
+        )
+
+
+    result = response.get(
+        "result"
+    )
+
+
+    if isinstance(
+        result,
+        dict,
+    ):
+
+        answer = (
+            result.get(
+                "answer"
+            )
+            or
+            result.get(
+                "response"
+            )
+            or
+            result.get(
+                "result"
+            )
+        )
+
+
+        if answer:
+
+            return str(
+                answer
+            )
+
+
+    if isinstance(
+        result,
+        str,
+    ):
+
+        return result
+
+
+    return str(
+        response.get(
+            "answer"
+        )
+        or
+        response.get(
+            "response"
+        )
+        or
+        response
+    )
+
+
+def get_sources(
+    response,
+):
+
+    if not response:
+
+        return []
+
+
+    result = response.get(
+        "result"
+    )
+
+
+    if isinstance(
+        result,
+        dict,
+    ):
+
+        return (
+            result.get(
+                "sources"
+            )
+            or
+            result.get(
+                "citations"
+            )
+            or
+            []
+        )
+
+
+    return (
+        response.get(
+            "sources"
+        )
+        or
+        []
+    )
+
+
+def show_sources(
+    sources,
+):
 
     if not sources:
+
         return
+
 
     with st.expander(
         "Knowledge Sources"
     ):
 
-        for item in sources:
+        for source in sources:
 
-            source_name = item.get(
-                "source",
-                "Unknown",
+            if isinstance(
+                source,
+                str,
+            ):
+
+                st.write(
+                    source
+                )
+
+                continue
+
+
+            source_name = (
+                source.get(
+                    "source",
+                    "Unknown",
+                )
             )
 
-            page_number = item.get(
-                "page"
+
+            page_number = (
+                source.get(
+                    "page"
+                )
             )
 
-            chunk = item.get(
-                "chunk"
-            )
-
-            score = item.get(
-                "score"
-            )
-
-            text = f"📄 {source_name}"
 
             if page_number is not None:
-                text += f" | Page {page_number}"
 
-            elif chunk is not None:
-                text += f" | Chunk {chunk}"
+                st.write(
+                    (
+                        f"📄 {source_name} "
+                        f"— Page {page_number}"
+                    )
+                )
 
-            if score is not None:
-                text += f" | Similarity {score:.2f}"
+            else:
 
-            st.write(
-                text
-            )
-
-
-# ==========================================================
-# SIDEBAR BRAND
-# ==========================================================
-
-render_sidebar_html(
-    """
-    <div class="brand-wrap">
-        <div class="brand-symbol">IA</div>
-        <div>
-            <div class="brand-main">INSURE AI</div>
-            <div class="brand-small">INSURANCE INTELLIGENCE</div>
-        </div>
-    </div>
-    """
-)
+                st.write(
+                    f"📄 {source_name}"
+                )
 
 
 # ==========================================================
-# SIDEBAR NAVIGATION
+# SESSION STATE
 # ==========================================================
 
-NAV_LABELS = {
-    "Home":
-        "⌂  Home",
-
-    "AI Copilot":
-        "✦  AI Copilot",
-
-    "Renewal Intelligence":
-        "↻  Renewal Intelligence",
-
-    "Fraud Intelligence":
-        "◉  Fraud Intelligence",
-
-    "Underwriting":
-        "◇  Underwriting",
-}
-
-
-radio_options = [
-    NAV_LABELS[item]
-    for item in NAV_OPTIONS
-]
-
-
-selected_label = st.sidebar.radio(
-    "Navigation",
-    options=radio_options,
-    index=NAV_OPTIONS.index(
-        st.session_state.current_page
-    ),
-    label_visibility="collapsed",
-)
-
-
-reverse_navigation = {
-    value: key
-    for key, value
-    in NAV_LABELS.items()
-}
-
-
-selected_page = reverse_navigation[
-    selected_label
-]
-
-
-if selected_page != st.session_state.current_page:
-
-    st.session_state.current_page = selected_page
-
-
-page = st.session_state.current_page
-
-
-# ==========================================================
-# BACKEND STATUS
-# ==========================================================
-
-st.sidebar.divider()
-
-
-if backend_is_online():
-
-    render_sidebar_html(
-        """
-        <div class="online-status">
-            <span class="online-dot"></span>
-            AI SYSTEM ONLINE
-        </div>
-        """
-    )
-
-else:
-
-    render_sidebar_html(
-        """
-        <div class="offline-status">
-            ● SERVICE OFFLINE
-        </div>
-        """
-    )
-
-
-# ==========================================================
-# OPTIONAL PLATFORM DETAILS
-# ==========================================================
-
-st.sidebar.markdown("")
-
-
-with st.sidebar.expander(
-    "About the platform"
+if (
+    "chat_history"
+    not in st.session_state
 ):
 
-    st.caption(
-        "Technical architecture"
-    )
+    st.session_state.chat_history = []
 
-    st.write(
-        "Backend: FastAPI"
-    )
 
-    st.write(
-        "Database: PostgreSQL"
-    )
+if (
+    "copilot_session_id"
+    not in st.session_state
+):
 
-    st.write(
-        "ML: XGBoost"
-    )
-
-    st.write(
-        "Agent Orchestration: LangGraph"
-    )
-
-    st.write(
-        "Knowledge Search: Semantic RAG"
+    st.session_state.copilot_session_id = (
+        uuid.uuid4().hex
     )
 
 
 # ==========================================================
-# HOME PAGE
+# SIDEBAR
+# ==========================================================
+
+with st.sidebar:
+
+    st.title(
+        "🛡️ INSURE AI"
+    )
+
+
+    st.caption(
+        "INSURANCE INTELLIGENCE"
+    )
+
+
+    st.divider()
+
+
+    page = st.radio(
+        "Navigation",
+        [
+            "Home",
+            "AI Copilot",
+            "Renewal Intelligence",
+            "Fraud Intelligence",
+            "Underwriting",
+            "Production Monitoring",
+        ],
+    )
+
+
+    st.divider()
+
+
+    if backend_is_online():
+
+        st.success(
+            "● AI SYSTEM ONLINE"
+        )
+
+    else:
+
+        st.error(
+            "● SERVICE OFFLINE"
+        )
+
+
+    with st.expander(
+        "System Architecture"
+    ):
+
+        st.write(
+            "FastAPI"
+        )
+
+        st.write(
+            "PostgreSQL"
+        )
+
+        st.write(
+            "XGBoost"
+        )
+
+        st.write(
+            "SHAP Explainability"
+        )
+
+        st.write(
+            "LangGraph Agents"
+        )
+
+        st.write(
+            "RAG Knowledge Search"
+        )
+
+        st.write(
+            "Production Monitoring"
+        )
+
+
+# ==========================================================
+# HOME
 # ==========================================================
 
 if page == "Home":
 
-    left, right = st.columns(
-        [0.92, 1.18],
-        gap="large",
+    st.title(
+        "INSURE AI"
     )
 
 
-    # ------------------------------------------------------
-    # LEFT HERO
-    # ------------------------------------------------------
-
-    with left:
-
-        render_html(
-            """
-            <div class="home-hero">
-                <div>
-                    <div class="hero-tag">
-                        INTELLIGENT INSURANCE PLATFORM
-                    </div>
-                    <h1 class="hero-title">
-                        INSURE<br>
-                        <span>AI.</span>
-                    </h1>
-                    <div class="hero-description">
-                        Insurance intelligence built for faster analysis,
-                        better risk visibility and smarter human decisions.
-                    </div>
-                    <div class="capability-list">
-                        <div><span>•</span> ASK YOUR INSURANCE DATA</div>
-                        <div><span>•</span> PREDICT POLICY RENEWAL RISK</div>
-                        <div><span>•</span> PRIORITIZE SUSPICIOUS CLAIMS</div>
-                        <div><span>•</span> SUPPORT UNDERWRITING TEAMS</div>
-                        <div><span>•</span> SEARCH INSURANCE KNOWLEDGE</div>
-                    </div>
-                </div>
-            </div>
-            """
-        )
+    st.subheader(
+        "AI-Powered Insurance Decision Intelligence"
+    )
 
 
-        button1, button2 = st.columns(
-            [1.1, 1]
-        )
+    st.write(
+        """
+        A single workspace for insurance analytics,
+        renewal prediction, fraud-risk detection,
+        underwriting decision support, AI Copilot,
+        explainability and production monitoring.
+        """
+    )
 
 
-        with button1:
+    st.divider()
 
-            if st.button(
-                "✦ Explore AI Copilot",
-                type="primary",
-                use_container_width=True,
-            ):
 
-                navigate(
-                    "AI Copilot"
+    c1, c2, c3, c4 = (
+        st.columns(4)
+    )
+
+
+    with c1:
+
+        with st.container(
+            border=True
+        ):
+
+            st.subheader(
+                "🤖 AI Copilot"
+            )
+
+            st.write(
+                (
+                    "Ask insurance, SQL, "
+                    "analytics and ML questions."
                 )
+            )
 
 
-        with button2:
+    with c2:
 
-            if st.button(
-                "View Renewal Intelligence",
-                use_container_width=True,
-            ):
+        with st.container(
+            border=True
+        ):
 
-                navigate(
-                    "Renewal Intelligence"
+            st.subheader(
+                "🔄 Renewal"
+            )
+
+            st.write(
+                (
+                    "Enter customer and policy "
+                    "features and analyze renewal risk."
                 )
+            )
 
 
-    # ------------------------------------------------------
-    # RIGHT CINEMATIC CARDS
-    # ------------------------------------------------------
+    with c3:
 
-    with right:
+        with st.container(
+            border=True
+        ):
 
-        render_html(
-            """
-            <div class="mosaic">
-                <div class="mosaic-card card-copilot">
-                    <div class="mosaic-label">
-                        CONVERSATIONAL INTELLIGENCE
-                    </div>
-                    <div class="mosaic-title">
-                        AI Copilot
-                    </div>
-                    <div class="mosaic-text">
-                        Ask questions across insurance data and documents
-                        using natural language.
-                    </div>
-                    <div class="mosaic-number">
-                        01
-                    </div>
-                </div>
-                <div class="mosaic-card card-renewal">
-                    <div class="mosaic-label">
-                        CUSTOMER RETENTION
-                    </div>
-                    <div class="mosaic-title">
-                        Renewal Intelligence
-                    </div>
-                    <div class="mosaic-text">
-                        Understand renewal probability and identify
-                        elevated churn risk.
-                    </div>
-                    <div class="mosaic-number">
-                        02
-                    </div>
-                </div>
-                <div class="mosaic-card card-fraud">
-                    <div class="mosaic-label">
-                        CLAIM INVESTIGATION
-                    </div>
-                    <div class="mosaic-title">
-                        Fraud Intelligence
-                    </div>
-                    <div class="mosaic-text">
-                        Prioritize claims requiring additional investigation.
-                    </div>
-                    <div class="mosaic-number">
-                        03
-                    </div>
-                </div>
-                <div class="mosaic-card card-underwriting">
-                    <div class="mosaic-label">
-                        RISK ASSESSMENT
-                    </div>
-                    <div class="mosaic-title">
-                        Underwriting Support
-                    </div>
-                    <div class="mosaic-text">
-                        Model-assisted applicant risk assessment.
-                    </div>
-                    <div class="mosaic-number">
-                        04
-                    </div>
-                </div>
-            </div>
-            """
-        )
+            st.subheader(
+                "🚨 Fraud"
+            )
+
+            st.write(
+                (
+                    "Enter claim details and generate "
+                    "a fraud-risk signal."
+                )
+            )
 
 
-    # ------------------------------------------------------
-    # QUICK ACCESS
-    # ------------------------------------------------------
+    with c4:
+
+        with st.container(
+            border=True
+        ):
+
+            st.subheader(
+                "📋 Underwriting"
+            )
+
+            st.write(
+                (
+                    "Enter applicant features and "
+                    "generate decision support."
+                )
+            )
+
 
     st.divider()
 
 
     st.subheader(
-        "Quick Access"
+        "Platform Flow"
     )
 
 
-    q1, q2, q3, q4 = st.columns(4)
-
-
-    with q1:
-
-        if st.button(
-            "✦ AI Copilot",
-            use_container_width=True,
-        ):
-
-            navigate(
-                "AI Copilot"
-            )
-
-
-    with q2:
-
-        if st.button(
-            "↻ Renewal",
-            use_container_width=True,
-        ):
-
-            navigate(
-                "Renewal Intelligence"
-            )
-
-
-    with q3:
-
-        if st.button(
-            "◉ Fraud",
-            use_container_width=True,
-        ):
-
-            navigate(
-                "Fraud Intelligence"
-            )
-
-
-    with q4:
-
-        if st.button(
-            "◇ Underwriting",
-            use_container_width=True,
-        ):
-
-            navigate(
-                "Underwriting"
-            )
+    st.code(
+        """
+Manual Business Inputs
+        ↓
+Feature Validation
+        ↓
+ML Model
+        ↓
+Prediction / Probability
+        ↓
+SHAP Explainability
+        ↓
+Prediction Monitoring
+        """,
+        language="text",
+    )
 
 
 # ==========================================================
-# AI COPILOT PAGE
+# AI COPILOT
 # ==========================================================
 
 elif page == "AI Copilot":
 
-    render_html(
-        """
-        <div class="page-label">
-            CONVERSATIONAL INTELLIGENCE
-        </div>
-        <div class="page-title">
-            AI Copilot
-        </div>
-        <div class="page-description">
-            Ask questions about customers, policies, claims,
-            premiums or insurance documents.
-        </div>
-        """
+    st.title(
+        "🤖 Insurance AI Copilot"
     )
 
 
-    # ------------------------------------------------------
-    # QUICK QUESTIONS
-    # ------------------------------------------------------
-
-    q1, q2, q3 = st.columns(3)
-
-
-    with q1:
-
-        if st.button(
-            "Customer Distribution",
-            use_container_width=True,
-        ):
-
-            st.session_state.quick_question = (
-                "Which states have the highest number of customers?"
-            )
-
-
-    with q2:
-
-        if st.button(
-            "Claim Requirements",
-            use_container_width=True,
-        ):
-
-            st.session_state.quick_question = (
-                "According to the claim guide, "
-                "what documents are required "
-                "for an insurance claim?"
-            )
-
-
-    with q3:
-
-        if st.button(
-            "Premium Analysis",
-            use_container_width=True,
-        ):
-
-            st.session_state.quick_question = (
-                "Which policy types generate "
-                "the highest annual premium?"
-            )
-
-
-    # ------------------------------------------------------
-    # CLEAR CHAT
-    # ------------------------------------------------------
-
-    clear_col, _ = st.columns(
-        [1, 5]
+    st.caption(
+        (
+            "Ask questions about insurance, "
+            "SQL, analytics, models and project knowledge."
+        )
     )
 
 
-    with clear_col:
+    _, button_col = (
+        st.columns(
+            [5, 1]
+        )
+    )
+
+
+    with button_col:
 
         if st.button(
-            "Clear Conversation",
+            "New Chat",
             use_container_width=True,
         ):
+
+            clear_copilot_session(
+                st.session_state
+                .copilot_session_id
+            )
+
 
             st.session_state.chat_history = []
+
+
+            st.session_state.copilot_session_id = (
+                uuid.uuid4().hex
+            )
+
 
             st.rerun()
 
 
-    st.divider()
-
-
-    # ------------------------------------------------------
-    # EXISTING CHAT
-    # ------------------------------------------------------
-
-    for message in st.session_state.chat_history:
+    for message in (
+        st.session_state.chat_history
+    ):
 
         with st.chat_message(
-            message["role"]
+            message[
+                "role"
+            ]
         ):
 
             st.markdown(
-                message["content"]
+                message[
+                    "content"
+                ]
             )
 
 
-            if message["role"] == "assistant":
-
-                route = message.get(
-                    "route"
+            show_sources(
+                message.get(
+                    "sources"
                 )
+            )
 
 
-                if route:
-
-                    render_html(
-                        f"""
-                        <div class="agent-badge">
-                            {route.upper()} INTELLIGENCE
-                        </div>
-                        """
-                    )
-
-
-                sql = message.get(
-                    "sql"
-                )
-
-
-                if sql:
-
-                    with st.expander(
-                        "Generated SQL"
-                    ):
-
-                        st.code(
-                            sql,
-                            language="sql",
-                        )
-
-
-                results = (
-                    message.get("results")
-                    or message.get("rows")
-                )
-
-
-                if results:
-
-                    st.dataframe(
-                        results,
-                        use_container_width=True,
-                    )
-
-
-                render_sources(
-                    message.get(
-                        "sources",
-                        [],
-                    )
-                )
-
-
-    # ------------------------------------------------------
-    # CHAT INPUT
-    # ------------------------------------------------------
-
-    typed_question = st.chat_input(
-        "Ask your insurance question..."
+    question = st.chat_input(
+        (
+            "Ask about insurance, SQL, "
+            "models or analytics..."
+        )
     )
 
 
-    user_question = (
-        st.session_state.quick_question
-        or typed_question
-    )
-
-
-    # ------------------------------------------------------
-    # PROCESS QUESTION
-    # ------------------------------------------------------
-
-    if user_question:
-
-        st.session_state.quick_question = None
-
+    if question:
 
         st.session_state.chat_history.append(
             {
@@ -1753,7 +1245,7 @@ elif page == "AI Copilot":
                     "user",
 
                 "content":
-                    user_question,
+                    question,
             }
         )
 
@@ -1763,8 +1255,21 @@ elif page == "AI Copilot":
         ):
 
             st.markdown(
-                user_question
+                question
             )
+
+
+        payload = {
+            "question":
+                question,
+
+            "input_data":
+                None,
+
+            "session_id":
+                st.session_state
+                .copilot_session_id,
+        }
 
 
         with st.chat_message(
@@ -1772,113 +1277,37 @@ elif page == "AI Copilot":
         ):
 
             with st.spinner(
-                "Analyzing your request..."
+                "Thinking..."
             ):
 
-                data = call_api(
+                response = call_api(
                     "/ask/copilot",
-                    {
-                        "question":
-                            user_question,
-
-                        "input_data":
-                            None,
-                    },
+                    payload,
                 )
 
 
-            if data:
+            if response:
 
-                route = data.get(
-                    "route",
-                    "unknown",
-                )
-
-
-                result = data.get(
-                    "result",
-                    {},
-                )
-
-
-                answer = result.get(
-                    "answer"
-                )
-
-
-                if not answer:
-
-                    answer = result.get(
-                        "prediction"
+                answer = (
+                    get_copilot_answer(
+                        response
                     )
+                )
 
 
-                if not answer:
-
-                    answer = result.get(
-                        "error"
+                sources = (
+                    get_sources(
+                        response
                     )
-
-
-                if not answer:
-
-                    answer = (
-                        "Request processed successfully."
-                    )
+                )
 
 
                 st.markdown(
-                    str(answer)
+                    answer
                 )
 
 
-                render_html(
-                    f"""
-                    <div class="agent-badge">
-                        {route.upper()} INTELLIGENCE
-                    </div>
-                    """
-                )
-
-
-                sql = result.get(
-                    "sql"
-                )
-
-
-                rows = (
-                    result.get("results")
-                    or result.get("rows")
-                )
-
-
-                sources = result.get(
-                    "sources",
-                    [],
-                )
-
-
-                if sql:
-
-                    with st.expander(
-                        "Generated SQL"
-                    ):
-
-                        st.code(
-                            sql,
-                            language="sql",
-                        )
-
-
-                if rows:
-
-                    st.dataframe(
-                        rows,
-                        use_container_width=True,
-                    )
-
-
-                render_sources(
+                show_sources(
                     sources
                 )
 
@@ -1889,16 +1318,7 @@ elif page == "AI Copilot":
                             "assistant",
 
                         "content":
-                            str(answer),
-
-                        "route":
-                            route,
-
-                        "sql":
-                            sql,
-
-                        "results":
-                            rows,
+                            answer,
 
                         "sources":
                             sources,
@@ -1907,24 +1327,21 @@ elif page == "AI Copilot":
 
 
 # ==========================================================
-# RENEWAL INTELLIGENCE PAGE
+# RENEWAL INTELLIGENCE
 # ==========================================================
 
 elif page == "Renewal Intelligence":
 
-    render_html(
-        """
-        <div class="page-label">
-            CUSTOMER RETENTION
-        </div>
-        <div class="page-title">
-            Renewal Intelligence
-        </div>
-        <div class="page-description">
-            Estimate renewal probability and identify
-            customers with elevated policy churn risk.
-        </div>
-        """
+    st.title(
+        "🔄 Renewal Intelligence"
+    )
+
+
+    st.caption(
+        (
+            "Enter customer, policy, payment and claim "
+            "features to estimate renewal behavior."
+        )
     )
 
 
@@ -1937,12 +1354,10 @@ elif page == "Renewal Intelligence":
         )
 
 
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = (
+            st.columns(3)
+        )
 
-
-        # --------------------------------------------------
-        # COLUMN 1
-        # --------------------------------------------------
 
         with c1:
 
@@ -1983,10 +1398,6 @@ elif page == "Renewal Intelligence":
             )
 
 
-        # --------------------------------------------------
-        # COLUMN 2
-        # --------------------------------------------------
-
         with c2:
 
             risk_score = st.number_input(
@@ -2022,10 +1433,6 @@ elif page == "Renewal Intelligence":
             )
 
 
-        # --------------------------------------------------
-        # COLUMN 3
-        # --------------------------------------------------
-
         with c3:
 
             max_delay = st.number_input(
@@ -2041,24 +1448,30 @@ elif page == "Renewal Intelligence":
             )
 
 
-            total_claim_amount = st.number_input(
-                "Total Claim Amount",
-                min_value=0.0,
-                value=10000.0,
+            total_claim_amount = (
+                st.number_input(
+                    "Total Claim Amount",
+                    min_value=0.0,
+                    value=10000.0,
+                )
             )
 
 
-            avg_claim_amount = st.number_input(
-                "Average Claim Amount",
-                min_value=0.0,
-                value=10000.0,
+            avg_claim_amount = (
+                st.number_input(
+                    "Average Claim Amount",
+                    min_value=0.0,
+                    value=10000.0,
+                )
             )
 
 
-            max_claim_amount = st.number_input(
-                "Maximum Claim Amount",
-                min_value=0.0,
-                value=10000.0,
+            max_claim_amount = (
+                st.number_input(
+                    "Maximum Claim Amount",
+                    min_value=0.0,
+                    value=10000.0,
+                )
             )
 
 
@@ -2067,7 +1480,9 @@ elif page == "Renewal Intelligence":
         )
 
 
-        c4, c5, c6 = st.columns(3)
+        c4, c5, c6 = (
+            st.columns(3)
+        )
 
 
         with c4:
@@ -2079,10 +1494,12 @@ elif page == "Renewal Intelligence":
             )
 
 
-            marital_status = st.selectbox(
-                "Marital Status",
-                MARITAL_STATUS_OPTIONS,
-                index=0,
+            marital_status = (
+                st.selectbox(
+                    "Marital Status",
+                    MARITAL_STATUS_OPTIONS,
+                    index=0,
+                )
             )
 
 
@@ -2102,33 +1519,41 @@ elif page == "Renewal Intelligence":
             )
 
 
-            customer_risk = st.selectbox(
-                "Customer Risk Segment",
-                CUSTOMER_RISK_OPTIONS,
-                index=1,
+            customer_risk = (
+                st.selectbox(
+                    "Customer Risk Segment",
+                    CUSTOMER_RISK_OPTIONS,
+                    index=1,
+                )
             )
 
 
-            policy_type = st.selectbox(
-                "Policy Type",
-                POLICY_TYPE_OPTIONS,
-                index=5,
+            policy_type = (
+                st.selectbox(
+                    "Policy Type",
+                    POLICY_TYPE_OPTIONS,
+                    index=5,
+                )
             )
 
 
         with c6:
 
-            sales_channel = st.selectbox(
-                "Sales Channel",
-                SALES_CHANNEL_OPTIONS,
-                index=1,
+            sales_channel = (
+                st.selectbox(
+                    "Sales Channel",
+                    SALES_CHANNEL_OPTIONS,
+                    index=1,
+                )
             )
 
 
-            payment_mode = st.selectbox(
-                "Payment Mode",
-                PAYMENT_MODE_OPTIONS,
-                index=0,
+            payment_mode = (
+                st.selectbox(
+                    "Payment Mode",
+                    PAYMENT_MODE_OPTIONS,
+                    index=0,
+                )
             )
 
 
@@ -2139,16 +1564,14 @@ elif page == "Renewal Intelligence":
             )
 
 
-        renewal_submit = st.form_submit_button(
-            "Analyze Renewal Risk",
-            type="primary",
-            use_container_width=True,
+        renewal_submit = (
+            st.form_submit_button(
+                "Analyze Renewal Risk",
+                type="primary",
+                use_container_width=True,
+            )
         )
 
-
-    # ------------------------------------------------------
-    # RENEWAL PREDICTION
-    # ------------------------------------------------------
 
     if renewal_submit:
 
@@ -2242,62 +1665,79 @@ elif page == "Renewal Intelligence":
             st.divider()
 
 
-            renewal_probability = result.get(
-                "renewal_probability",
-                0,
+            renewal_probability = (
+                safe_float(
+                    result.get(
+                        "renewal_probability"
+                    )
+                )
             )
 
 
-            churn_probability = result.get(
-                "churn_probability",
-                0,
+            churn_probability = (
+                safe_float(
+                    result.get(
+                        "churn_probability"
+                    )
+                )
             )
 
 
-            threshold = result.get(
-                "threshold",
-                0,
+            threshold = (
+                safe_float(
+                    result.get(
+                        "threshold"
+                    )
+                )
             )
 
 
-            prediction = result.get(
-                "prediction",
-                "Unavailable",
+            prediction = (
+                result.get(
+                    "prediction",
+                    "Unavailable",
+                )
             )
 
 
-            m1, m2, m3 = st.columns(3)
+            m1, m2, m3 = (
+                st.columns(3)
+            )
 
 
             m1.metric(
                 "Renewal Probability",
-                f"{renewal_probability * 100:.1f}%",
+                (
+                    f"{renewal_probability * 100:.1f}%"
+                ),
             )
 
 
             m2.metric(
                 "Churn Probability",
-                f"{churn_probability * 100:.1f}%",
+                (
+                    f"{churn_probability * 100:.1f}%"
+                ),
             )
 
 
             m3.metric(
                 "Decision Threshold",
-                f"{threshold * 100:.1f}%",
+                (
+                    f"{threshold * 100:.1f}%"
+                ),
             )
 
 
-            st.markdown(
-                "#### Renewal Confidence"
+            st.subheader(
+                "Renewal Confidence"
             )
 
 
             st.progress(
                 min(
                     max(
-                        float(
-                            renewal_probability
-                        ),
+                        renewal_probability,
                         0.0,
                     ),
                     1.0,
@@ -2305,7 +1745,11 @@ elif page == "Renewal Intelligence":
             )
 
 
-            if churn_probability >= threshold:
+            if (
+                churn_probability
+                >=
+                threshold
+            ):
 
                 st.error(
                     f"⚠ {prediction}"
@@ -2318,6 +1762,16 @@ elif page == "Renewal Intelligence":
                 )
 
 
+            show_explainability(
+                result
+            )
+
+
+            show_monitoring(
+                result
+            )
+
+
             with st.expander(
                 "Technical Model Output"
             ):
@@ -2328,30 +1782,29 @@ elif page == "Renewal Intelligence":
 
 
 # ==========================================================
-# FRAUD INTELLIGENCE PAGE
+# FRAUD INTELLIGENCE
 # ==========================================================
 
 elif page == "Fraud Intelligence":
 
-    render_html(
-        """
-        <div class="page-label">
-            CLAIM INVESTIGATION
-        </div>
-        <div class="page-title">
-            Fraud Intelligence
-        </div>
-        <div class="page-description">
-            Generate a fraud-risk signal to prioritize
-            claims for additional investigation.
-        </div>
-        """
+    st.title(
+        "🚨 Fraud Intelligence"
+    )
+
+
+    st.caption(
+        (
+            "Generate a fraud-risk signal to prioritize "
+            "claims for additional investigation."
+        )
     )
 
 
     st.warning(
-        "A risk flag is not a fraud determination. "
-        "Human investigation is required."
+        (
+            "A risk flag is not a fraud determination. "
+            "Human investigation is required."
+        )
     )
 
 
@@ -2364,78 +1817,98 @@ elif page == "Fraud Intelligence":
         )
 
 
-        c1, c2, c3 = st.columns(3)
+        c1, c2, c3 = (
+            st.columns(3)
+        )
 
 
         with c1:
 
-            claim_amount = st.number_input(
-                "Claim Amount",
-                min_value=0.0,
-                value=50000.0,
+            claim_amount = (
+                st.number_input(
+                    "Claim Amount",
+                    min_value=0.0,
+                    value=50000.0,
+                )
             )
 
 
-            reporting_delay = st.number_input(
-                "Reporting Delay Days",
-                min_value=0.0,
-                value=2.0,
+            reporting_delay = (
+                st.number_input(
+                    "Reporting Delay Days",
+                    min_value=0.0,
+                    value=2.0,
+                )
             )
 
 
-            incident_month = st.number_input(
-                "Incident Month",
-                min_value=1,
-                max_value=12,
-                value=6,
+            incident_month = (
+                st.number_input(
+                    "Incident Month",
+                    min_value=1,
+                    max_value=12,
+                    value=6,
+                )
             )
 
 
         with c2:
 
-            fraud_age = st.number_input(
-                "Customer Age",
-                min_value=18,
-                max_value=100,
-                value=35,
+            fraud_age = (
+                st.number_input(
+                    "Customer Age",
+                    min_value=18,
+                    max_value=100,
+                    value=35,
+                )
             )
 
 
-            fraud_income = st.number_input(
-                "Annual Income",
-                min_value=0.0,
-                value=600000.0,
+            fraud_income = (
+                st.number_input(
+                    "Annual Income",
+                    min_value=0.0,
+                    value=600000.0,
+                )
             )
 
 
-            fraud_credit = st.number_input(
-                "Credit Score",
-                min_value=300,
-                max_value=900,
-                value=750,
+            fraud_credit = (
+                st.number_input(
+                    "Credit Score",
+                    min_value=300,
+                    max_value=900,
+                    value=750,
+                )
             )
 
 
         with c3:
 
-            fraud_sum_insured = st.number_input(
-                "Sum Insured",
-                min_value=0.0,
-                value=500000.0,
+            fraud_sum_insured = (
+                st.number_input(
+                    "Sum Insured",
+                    min_value=0.0,
+                    value=500000.0,
+                )
             )
 
 
-            fraud_premium = st.number_input(
-                "Annual Premium",
-                min_value=0.0,
-                value=20000.0,
+            fraud_premium = (
+                st.number_input(
+                    "Annual Premium",
+                    min_value=0.0,
+                    value=20000.0,
+                )
             )
 
 
-            fraud_risk_score = st.number_input(
-                "Risk Score",
-                min_value=0.0,
-                value=50.0,
+            fraud_risk_score = (
+                st.number_input(
+                    "Risk Score",
+                    min_value=0.0,
+                    value=50.0,
+                )
             )
 
 
@@ -2444,102 +1917,124 @@ elif page == "Fraud Intelligence":
         )
 
 
-        c4, c5, c6 = st.columns(3)
+        c4, c5, c6 = (
+            st.columns(3)
+        )
 
 
         with c4:
 
-            claim_type = st.selectbox(
-                "Claim Type",
-                CLAIM_TYPE_OPTIONS,
-                index=6,
+            claim_type = (
+                st.selectbox(
+                    "Claim Type",
+                    CLAIM_TYPE_OPTIONS,
+                    index=6,
+                )
             )
 
 
-            claim_source = st.selectbox(
-                "Claim Source",
-                CLAIM_SOURCE_OPTIONS,
-                index=5,
+            claim_source = (
+                st.selectbox(
+                    "Claim Source",
+                    CLAIM_SOURCE_OPTIONS,
+                    index=5,
+                )
             )
 
 
-            claim_severity = st.selectbox(
-                "Claim Severity",
-                CLAIM_SEVERITY_OPTIONS,
-                index=0,
+            claim_severity = (
+                st.selectbox(
+                    "Claim Severity",
+                    CLAIM_SEVERITY_OPTIONS,
+                    index=0,
+                )
             )
 
 
-            fraud_gender = st.selectbox(
-                "Gender",
-                GENDER_OPTIONS,
-                index=2,
+            fraud_gender = (
+                st.selectbox(
+                    "Gender",
+                    GENDER_OPTIONS,
+                    index=2,
+                )
             )
 
 
         with c5:
 
-            fraud_marital = st.selectbox(
-                "Marital Status",
-                MARITAL_STATUS_OPTIONS,
-                index=0,
+            fraud_marital = (
+                st.selectbox(
+                    "Marital Status",
+                    MARITAL_STATUS_OPTIONS,
+                    index=0,
+                )
             )
 
 
-            fraud_occupation = st.selectbox(
-                "Occupation",
-                OCCUPATION_OPTIONS,
-                index=1,
+            fraud_occupation = (
+                st.selectbox(
+                    "Occupation",
+                    OCCUPATION_OPTIONS,
+                    index=1,
+                )
             )
 
 
-            fraud_state = st.selectbox(
-                "State",
-                STATE_OPTIONS,
-                index=6,
+            fraud_state = (
+                st.selectbox(
+                    "State",
+                    STATE_OPTIONS,
+                    index=6,
+                )
             )
 
 
-            fraud_customer_risk = st.selectbox(
-                "Customer Risk Segment",
-                CUSTOMER_RISK_OPTIONS,
-                index=1,
+            fraud_customer_risk = (
+                st.selectbox(
+                    "Customer Risk Segment",
+                    CUSTOMER_RISK_OPTIONS,
+                    index=1,
+                )
             )
 
 
         with c6:
 
-            fraud_policy_type = st.selectbox(
-                "Policy Type",
-                POLICY_TYPE_OPTIONS,
-                index=5,
+            fraud_policy_type = (
+                st.selectbox(
+                    "Policy Type",
+                    POLICY_TYPE_OPTIONS,
+                    index=5,
+                )
             )
 
 
-            fraud_payment_mode = st.selectbox(
-                "Payment Mode",
-                PAYMENT_MODE_OPTIONS,
-                index=0,
+            fraud_payment_mode = (
+                st.selectbox(
+                    "Payment Mode",
+                    PAYMENT_MODE_OPTIONS,
+                    index=0,
+                )
             )
 
 
-            fraud_risk_band = st.selectbox(
-                "Risk Band",
-                RISK_BAND_OPTIONS,
-                index=0,
+            fraud_risk_band = (
+                st.selectbox(
+                    "Risk Band",
+                    RISK_BAND_OPTIONS,
+                    index=0,
+                )
             )
 
 
-        fraud_submit = st.form_submit_button(
-            "Analyze Claim Risk",
-            type="primary",
-            use_container_width=True,
+        fraud_submit = (
+            st.form_submit_button(
+                "Analyze Claim Risk",
+                type="primary",
+                use_container_width=True,
+            )
         )
 
-
-    # ------------------------------------------------------
-    # FRAUD PREDICTION
-    # ------------------------------------------------------
 
     if fraud_submit:
 
@@ -2621,50 +2116,62 @@ elif page == "Fraud Intelligence":
             st.divider()
 
 
-            fraud_probability = result.get(
-                "fraud_probability",
-                0,
+            fraud_probability = (
+                safe_float(
+                    result.get(
+                        "fraud_probability"
+                    )
+                )
             )
 
 
-            threshold = result.get(
-                "threshold",
-                0,
+            threshold = (
+                safe_float(
+                    result.get(
+                        "threshold"
+                    )
+                )
             )
 
 
-            prediction = result.get(
-                "prediction",
-                "Unavailable",
+            prediction = (
+                result.get(
+                    "prediction",
+                    "Unavailable",
+                )
             )
 
 
-            m1, m2 = st.columns(2)
+            m1, m2 = (
+                st.columns(2)
+            )
 
 
             m1.metric(
                 "Fraud Risk Probability",
-                f"{fraud_probability * 100:.1f}%",
+                (
+                    f"{fraud_probability * 100:.1f}%"
+                ),
             )
 
 
             m2.metric(
                 "Investigation Threshold",
-                f"{threshold * 100:.1f}%",
+                (
+                    f"{threshold * 100:.1f}%"
+                ),
             )
 
 
-            st.markdown(
-                "#### Risk Signal"
+            st.subheader(
+                "Risk Signal"
             )
 
 
             st.progress(
                 min(
                     max(
-                        float(
-                            fraud_probability
-                        ),
+                        fraud_probability,
                         0.0,
                     ),
                     1.0,
@@ -2672,24 +2179,38 @@ elif page == "Fraud Intelligence":
             )
 
 
-            if fraud_probability >= threshold:
+            if (
+                fraud_probability
+                >=
+                threshold
+            ):
 
                 st.error(
-                    "⚠ Claim flagged for "
-                    "additional investigation."
+                    f"⚠ {prediction}"
                 )
 
             else:
 
                 st.success(
-                    "✓ No elevated fraud-risk "
-                    "signal detected."
+                    f"✓ {prediction}"
                 )
 
 
             st.caption(
-                "This output is a prioritization signal. "
-                "It does not establish that fraud occurred."
+                (
+                    "This is a prioritization signal only. "
+                    "It does not establish that fraud occurred."
+                )
+            )
+
+
+            show_explainability(
+                result
+            )
+
+
+            show_monitoring(
+                result
             )
 
 
@@ -2703,30 +2224,29 @@ elif page == "Fraud Intelligence":
 
 
 # ==========================================================
-# UNDERWRITING PAGE
+# UNDERWRITING
 # ==========================================================
 
 elif page == "Underwriting":
 
-    render_html(
-        """
-        <div class="page-label">
-            RISK ASSESSMENT
-        </div>
-        <div class="page-title">
-            Underwriting Support
-        </div>
-        <div class="page-description">
-            Analyze applicant characteristics and generate
-            model-based signals for qualified human review.
-        </div>
-        """
+    st.title(
+        "📋 Underwriting Decision Support"
+    )
+
+
+    st.caption(
+        (
+            "Analyze applicant characteristics and generate "
+            "model-based decision support."
+        )
     )
 
 
     st.warning(
-        "Final underwriting decisions require "
-        "qualified human review."
+        (
+            "Final underwriting decisions require "
+            "qualified human review."
+        )
     )
 
 
@@ -2734,7 +2254,9 @@ elif page == "Underwriting":
         "underwriting_form"
     ):
 
-        left, right = st.columns(2)
+        left, right = (
+            st.columns(2)
+        )
 
 
         with left:
@@ -2747,10 +2269,12 @@ elif page == "Underwriting":
             )
 
 
-            health_score = st.number_input(
-                "Health Score",
-                min_value=0.0,
-                value=75.0,
+            health_score = (
+                st.number_input(
+                    "Health Score",
+                    min_value=0.0,
+                    value=75.0,
+                )
             )
 
 
@@ -2762,27 +2286,33 @@ elif page == "Underwriting":
             )
 
 
-            uw_credit = st.number_input(
-                "Credit Score",
-                min_value=300,
-                max_value=900,
-                value=750,
+            uw_credit = (
+                st.number_input(
+                    "Credit Score",
+                    min_value=300,
+                    max_value=900,
+                    value=750,
+                )
             )
 
 
         with right:
 
-            lifestyle = st.selectbox(
-                "Lifestyle",
-                LIFESTYLE_OPTIONS,
-                index=0,
+            lifestyle = (
+                st.selectbox(
+                    "Lifestyle",
+                    LIFESTYLE_OPTIONS,
+                    index=0,
+                )
             )
 
 
-            medical_history = st.selectbox(
-                "Medical History",
-                YES_NO_OPTIONS,
-                index=0,
+            medical_history = (
+                st.selectbox(
+                    "Medical History",
+                    YES_NO_OPTIONS,
+                    index=0,
+                )
             )
 
 
@@ -2793,23 +2323,23 @@ elif page == "Underwriting":
             )
 
 
-            occupation_risk = st.selectbox(
-                "Occupation Risk",
-                OCCUPATION_RISK_OPTIONS,
-                index=1,
+            occupation_risk = (
+                st.selectbox(
+                    "Occupation Risk",
+                    OCCUPATION_RISK_OPTIONS,
+                    index=1,
+                )
             )
 
 
-        underwriting_submit = st.form_submit_button(
-            "Run Assessment",
-            type="primary",
-            use_container_width=True,
+        underwriting_submit = (
+            st.form_submit_button(
+                "Run Assessment",
+                type="primary",
+                use_container_width=True,
+            )
         )
 
-
-    # ------------------------------------------------------
-    # UNDERWRITING PREDICTION
-    # ------------------------------------------------------
 
     if underwriting_submit:
 
@@ -2855,32 +2385,79 @@ elif page == "Underwriting":
             st.divider()
 
 
-            decision = result.get(
-                "decision",
-                "Unavailable",
+            decision = (
+                result.get(
+                    "decision"
+                )
+                or
+                result.get(
+                    "prediction"
+                )
+                or
+                result.get(
+                    "predicted_class"
+                )
+                or
+                "Unavailable"
             )
 
 
-            st.info(
-                f"Model Recommendation: **{decision}**"
-            )
+            if (
+                decision
+                ==
+                "Declined"
+            ):
+
+                st.error(
+                    (
+                        "Model Recommendation: "
+                        f"{decision}"
+                    )
+                )
+
+            elif (
+                decision
+                ==
+                "Approved with Loading"
+            ):
+
+                st.warning(
+                    (
+                        "Model Recommendation: "
+                        f"{decision}"
+                    )
+                )
+
+            else:
+
+                st.success(
+                    (
+                        "Model Recommendation: "
+                        f"{decision}"
+                    )
+                )
 
 
-            probabilities = result.get(
-                "probabilities",
-                {},
+            probabilities = (
+                result.get(
+                    "probabilities"
+                )
+                or
+                {}
             )
 
 
             if probabilities:
 
-                st.markdown(
-                    "### Class Probabilities"
+                st.subheader(
+                    "Class Probabilities"
                 )
 
 
                 columns = st.columns(
-                    len(probabilities)
+                    len(
+                        probabilities
+                    )
                 )
 
 
@@ -2891,16 +2468,32 @@ elif page == "Underwriting":
                     probabilities.items()
                 ):
 
-                    columns[index].metric(
+                    columns[
+                        index
+                    ].metric(
                         class_name,
-                        f"{probability * 100:.1f}%",
+                        (
+                            f"{safe_float(probability) * 100:.1f}%"
+                        ),
                     )
 
 
+            show_explainability(
+                result
+            )
+
+
+            show_monitoring(
+                result
+            )
+
+
             st.caption(
-                "The model provides decision-support signals only. "
-                "It must not be used as an autonomous "
-                "insurance eligibility decision."
+                (
+                    "This model provides decision-support "
+                    "signals only and must not be used as "
+                    "an autonomous eligibility decision."
+                )
             )
 
 
@@ -2914,14 +2507,645 @@ elif page == "Underwriting":
 
 
 # ==========================================================
+# PRODUCTION MONITORING
+# ==========================================================
+
+elif page == "Production Monitoring":
+
+    st.title(
+        "📊 Production Monitoring"
+    )
+
+
+    st.caption(
+        (
+            "Monitor prediction traffic, latency, "
+            "ground-truth coverage and observed "
+            "model performance."
+        )
+    )
+
+
+    refresh_col, _ = (
+        st.columns(
+            [1, 5]
+        )
+    )
+
+
+    with refresh_col:
+
+        if st.button(
+            "Refresh",
+            use_container_width=True,
+        ):
+
+            st.rerun()
+
+
+    summary_data = call_get_api(
+        "/monitoring/summary"
+    )
+
+
+    model_data = call_get_api(
+        "/monitoring/models"
+    )
+
+
+    coverage_data = call_get_api(
+        "/monitoring/outcome-coverage"
+    )
+
+
+    performance_data = call_get_api(
+        "/monitoring/performance"
+    )
+
+
+    recent_data = call_get_api(
+        "/monitoring/recent",
+        params={
+            "limit":
+                20,
+        },
+    )
+
+
+    # ======================================================
+    # OPERATIONAL SUMMARY
+    # ======================================================
+
+    st.subheader(
+        "Operational Summary"
+    )
+
+
+    if isinstance(
+        summary_data,
+        dict,
+    ):
+
+        total = (
+            summary_data.get(
+                "total_predictions"
+            )
+            or
+            summary_data.get(
+                "total"
+            )
+            or
+            0
+        )
+
+
+        successful = (
+            summary_data.get(
+                "successful_predictions"
+            )
+            or
+            summary_data.get(
+                "successful"
+            )
+            or
+            summary_data.get(
+                "success_count"
+            )
+            or
+            0
+        )
+
+
+        failed = (
+            summary_data.get(
+                "failed_predictions"
+            )
+            or
+            summary_data.get(
+                "failed"
+            )
+            or
+            summary_data.get(
+                "error_count"
+            )
+            or
+            0
+        )
+
+
+        avg_latency = (
+            summary_data.get(
+                "avg_latency_ms"
+            )
+            or
+            summary_data.get(
+                "average_latency_ms"
+            )
+            or
+            0
+        )
+
+
+        c1, c2, c3, c4 = (
+            st.columns(4)
+        )
+
+
+        c1.metric(
+            "Total Predictions",
+            total,
+        )
+
+
+        c2.metric(
+            "Successful",
+            successful,
+        )
+
+
+        c3.metric(
+            "Errors",
+            failed,
+        )
+
+
+        c4.metric(
+            "Average Latency",
+            (
+                f"{safe_float(avg_latency):.0f} ms"
+            ),
+        )
+
+
+        with st.expander(
+            "Raw Summary"
+        ):
+
+            st.json(
+                summary_data
+            )
+
+
+    # ======================================================
+    # MODEL OPERATIONS
+    # ======================================================
+
+    st.divider()
+
+
+    st.subheader(
+        "Model-wise Operations"
+    )
+
+
+    model_df = (
+        dataframe_from_api(
+            model_data
+        )
+    )
+
+
+    if not model_df.empty:
+
+        st.dataframe(
+            model_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            (
+                "No model operational "
+                "data available yet."
+            )
+        )
+
+
+    # ======================================================
+    # GROUND TRUTH
+    # ======================================================
+
+    st.divider()
+
+
+    st.subheader(
+        "Ground Truth Coverage"
+    )
+
+
+    coverage_df = (
+        dataframe_from_api(
+            coverage_data
+        )
+    )
+
+
+    if not coverage_df.empty:
+
+        st.dataframe(
+            coverage_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            (
+                "No ground-truth coverage "
+                "data available yet."
+            )
+        )
+
+
+    # ======================================================
+    # PERFORMANCE
+    # ======================================================
+
+    st.divider()
+
+
+    st.subheader(
+        "Observed Model Performance"
+    )
+
+
+    items = performance_items(
+        performance_data
+    )
+
+
+    if not items:
+
+        st.info(
+            (
+                "No labeled performance "
+                "data available yet."
+            )
+        )
+
+
+    for (
+        model_name,
+        model,
+    ) in items:
+
+        if not isinstance(
+            model,
+            dict,
+        ):
+
+            continue
+
+
+        with st.container(
+            border=True
+        ):
+
+            st.subheader(
+                str(
+                    model_name
+                )
+                .replace(
+                    "_",
+                    " ",
+                )
+                .title()
+            )
+
+
+            if (
+                model.get(
+                    "status"
+                )
+                !=
+                "success"
+            ):
+
+                st.info(
+                    model.get(
+                        "message",
+                        (
+                            "Not enough labeled "
+                            "predictions yet."
+                        ),
+                    )
+                )
+
+                continue
+
+
+            evaluated = int(
+                model.get(
+                    "evaluated_predictions",
+                    0,
+                )
+                or
+                0
+            )
+
+
+            accuracy = (
+                safe_float(
+                    model.get(
+                        "accuracy"
+                    )
+                )
+            )
+
+
+            precision = (
+                safe_float(
+                    model.get(
+                        "precision"
+                    )
+                )
+            )
+
+
+            recall = (
+                safe_float(
+                    model.get(
+                        "recall"
+                    )
+                )
+            )
+
+
+            f1 = (
+                safe_float(
+                    model.get(
+                        "f1_score"
+                    )
+                )
+            )
+
+
+            p1, p2, p3, p4, p5 = (
+                st.columns(5)
+            )
+
+
+            p1.metric(
+                "Evaluated",
+                evaluated,
+            )
+
+
+            p2.metric(
+                "Accuracy",
+                f"{accuracy:.2%}",
+            )
+
+
+            p3.metric(
+                "Macro Precision",
+                f"{precision:.2%}",
+            )
+
+
+            p4.metric(
+                "Macro Recall",
+                f"{recall:.2%}",
+            )
+
+
+            p5.metric(
+                "Macro F1",
+                f"{f1:.2%}",
+            )
+
+
+            # ==============================================
+            # CLASS METRICS
+            # ==============================================
+
+            class_metrics = (
+                model.get(
+                    "class_metrics"
+                )
+                or
+                []
+            )
+
+
+            if class_metrics:
+
+                st.write(
+                    "Class-wise Metrics"
+                )
+
+
+                st.dataframe(
+                    pd.DataFrame(
+                        class_metrics
+                    ),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+
+            # ==============================================
+            # CONFUSION MATRIX
+            # ==============================================
+
+            confusion = (
+                model.get(
+                    "confusion_matrix"
+                )
+                or
+                {}
+            )
+
+
+            labels = (
+                confusion.get(
+                    "labels"
+                )
+                or
+                []
+            )
+
+
+            matrix = (
+                confusion.get(
+                    "matrix"
+                )
+                or
+                []
+            )
+
+
+            if labels and matrix:
+
+                st.write(
+                    "Confusion Matrix"
+                )
+
+
+                confusion_df = (
+                    pd.DataFrame(
+                        matrix,
+
+                        index=[
+                            f"Actual {label}"
+                            for label
+                            in labels
+                        ],
+
+                        columns=[
+                            f"Predicted {label}"
+                            for label
+                            in labels
+                        ],
+                    )
+                )
+
+
+                st.dataframe(
+                    confusion_df,
+                    use_container_width=True,
+                )
+
+
+            # ==============================================
+            # ACTUAL VS PREDICTED
+            # ==============================================
+
+            actual_distribution = (
+                model.get(
+                    "actual_distribution"
+                )
+                or
+                {}
+            )
+
+
+            predicted_distribution = (
+                model.get(
+                    "predicted_distribution"
+                )
+                or
+                {}
+            )
+
+
+            if (
+                actual_distribution
+                and
+                predicted_distribution
+            ):
+
+                labels_all = sorted(
+                    set(
+                        actual_distribution.keys()
+                    )
+                    |
+                    set(
+                        predicted_distribution.keys()
+                    )
+                )
+
+
+                chart_df = (
+                    pd.DataFrame(
+                        {
+                            "Actual": [
+                                actual_distribution.get(
+                                    label,
+                                    0,
+                                )
+                                for label
+                                in labels_all
+                            ],
+
+                            "Predicted": [
+                                predicted_distribution.get(
+                                    label,
+                                    0,
+                                )
+                                for label
+                                in labels_all
+                            ],
+                        },
+
+                        index=
+                            labels_all,
+                    )
+                )
+
+
+                st.write(
+                    "Actual vs Predicted"
+                )
+
+
+                st.bar_chart(
+                    chart_df
+                )
+
+
+            st.caption(
+                (
+                    "Source: "
+                    f"{model.get('evaluation_source', '—')} | "
+                    "Endpoint: "
+                    f"{model.get('endpoint_filter', '—')} | "
+                    "Deduplication: "
+                    f"{model.get('deduplication', '—')}"
+                )
+            )
+
+
+    # ======================================================
+    # RECENT PREDICTIONS
+    # ======================================================
+
+    st.divider()
+
+
+    st.subheader(
+        "Recent Predictions"
+    )
+
+
+    recent_df = (
+        dataframe_from_api(
+            recent_data
+        )
+    )
+
+
+    if not recent_df.empty:
+
+        st.dataframe(
+            recent_df,
+            use_container_width=True,
+            hide_index=True,
+        )
+
+    else:
+
+        st.info(
+            (
+                "No recent prediction "
+                "logs available yet."
+            )
+        )
+
+
+# ==========================================================
 # FOOTER
 # ==========================================================
 
-render_html(
-    """
-    <div class="footer">
-        INSURE AI • AI-powered Insurance Intelligence •
-        Secure • Explainable • Human-in-the-loop
-    </div>
-    """
+st.divider()
+
+
+st.caption(
+    (
+        "INSURE AI • Explainable AI • "
+        "Production Monitoring • Human-in-the-Loop"
+    )
 )
