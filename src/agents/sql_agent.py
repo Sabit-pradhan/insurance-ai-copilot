@@ -1,7 +1,7 @@
 # src/agents/sql_agent.py
 
-import re
 import logging
+import re
 from decimal import Decimal
 from typing import Any
 
@@ -9,986 +9,424 @@ from src.utils.llm import llm
 from src.data.schema_service import get_database_schema
 from src.data.query_service import run_query
 
-
 logger = logging.getLogger(__name__)
 
 
 # ==========================================================
-# TEXT NORMALIZATION
+# SQL CLEANING
 # ==========================================================
-
-def normalize_question(question: str) -> str:
-
-    text = question.lower().strip()
-
-    text = re.sub(
-        r"[^\w\s%-]",
-        " ",
-        text,
-    )
-
-    replacements = {
-        "customers": "customer",
-        "policies": "policy",
-        "claims": "claim",
-        "agents": "agent",
-        "premiums": "premium",
-        "renewals": "renewal",
-    }
-
-    for old, new in replacements.items():
-        text = text.replace(old, new)
-
-    text = re.sub(
-        r"\s+",
-        " ",
-        text,
-    )
-
-    return text.strip()
-
-
-def contains_any(
-    text: str,
-    phrases: list[str],
-) -> bool:
-
-    return any(
-        phrase in text
-        for phrase in phrases
-    )
-
-
-# ==========================================================
-# SQL SAFETY
-# ==========================================================
-
-DANGEROUS_SQL = [
-    "insert ",
-    "update ",
-    "delete ",
-    "drop ",
-    "alter ",
-    "truncate ",
-    "create ",
-    "grant ",
-    "revoke ",
-    "copy ",
-    "call ",
-    "merge ",
-]
-
 
 def clean_sql(sql: str) -> str:
-    """
-    Extract one PostgreSQL SELECT / WITH query from Ollama output.
-
-    Handles common model output such as:
-    - <think>...</think> blocks
-    - ```sql ... ``` fences
-    - "SQL: SELECT ..." prefixes
-    - short explanatory text before the query
-    """
+    """Extract a SQL query from the LLM response."""
 
     if not sql:
-        raise ValueError("Ollama returned an empty SQL response.")
+        raise ValueError("The LLM returned an empty SQL response.")
 
-    text = str(sql).strip()
+    sql = str(sql).strip()
 
-    # Qwen models can occasionally return reasoning blocks.
-    text = re.sub(
+    sql = re.sub(
         r"<think>.*?</think>",
         "",
-        text,
+        sql,
         flags=re.IGNORECASE | re.DOTALL,
     ).strip()
 
-    # Prefer SQL inside a fenced code block when present.
-    fenced = re.search(
+    match = re.search(
         r"```(?:sql)?\s*(.*?)```",
-        text,
+        sql,
         flags=re.IGNORECASE | re.DOTALL,
     )
 
-    if fenced:
-        text = fenced.group(1).strip()
-    else:
-        text = text.replace("```sql", "")
-        text = text.replace("```SQL", "")
-        text = text.replace("```", "")
-        text = text.strip()
+    if match:
+        sql = match.group(1).strip()
 
-    # Remove labels such as "SQL:" or "Query:".
-    text = re.sub(
-        r"^(?:sql|query)\s*:\s*",
+    sql = re.sub(
+        r"^\s*SQL\s*:\s*",
         "",
-        text,
+        sql,
         flags=re.IGNORECASE,
-    ).strip()
+    )
 
-    # Find the first line that actually begins a SELECT / WITH query.
-    lines = text.splitlines()
-    start_index = None
+    sql = sql.strip().rstrip(";").strip()
 
-    for index, line in enumerate(lines):
-        stripped = line.strip()
+    start = re.search(r"\b(SELECT|WITH)\b", sql, re.IGNORECASE)
 
-        if re.match(
-            r"^(select|with)\b",
-            stripped,
-            flags=re.IGNORECASE,
-        ):
-            start_index = index
-            break
-
-    if start_index is not None:
-        text = "\n".join(lines[start_index:]).strip()
-    else:
-        # Fallback for a query returned on the same line as some text.
-        match = re.search(
-            r"\b(select|with)\b[\s\S]*",
-            text,
-            flags=re.IGNORECASE,
+    if not start:
+        raise ValueError(
+            "The LLM did not return a SELECT or WITH query."
         )
 
-        if not match:
-            raise ValueError(
-                "Ollama did not return a SELECT/WITH SQL query."
-            )
+    return sql[start.start():].strip().rstrip(";").strip()
 
-        text = match.group(0).strip()
 
-    # Keep only the first SQL statement.
-    semicolon_position = text.find(";")
-
-    if semicolon_position != -1:
-        text = text[:semicolon_position + 1]
-
-    return text.strip()
-
+# ==========================================================
+# SQL VALIDATION
+# ==========================================================
 
 def validate_sql(sql: str) -> None:
-    """
-    Only read-only SELECT / WITH queries are allowed.
-    """
+    """Permit read-only queries and reject prohibited operations."""
 
-    normalized = sql.lower().strip()
+    if not sql or not sql.strip():
+        raise ValueError("SQL query is empty.")
 
-    if not (
-        normalized.startswith("select")
-        or normalized.startswith("with")
-    ):
+    query = sql.strip()
+
+    if ";" in query:
+        raise ValueError("Multiple SQL statements are not allowed.")
+
+    if "--" in query or "/*" in query or "*/" in query:
+        raise ValueError("SQL comments are not allowed.")
+
+    if not re.match(r"^(SELECT|WITH)\b", query, re.IGNORECASE):
         raise ValueError(
-            "Only SELECT queries are allowed."
+            "Only SELECT or WITH ... SELECT queries are allowed."
         )
 
-    for keyword in DANGEROUS_SQL:
+    dangerous_pattern = (
+        r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|TRUNCATE|CREATE|"
+        r"GRANT|REVOKE|COPY|CALL|MERGE|DO|EXECUTE|"
+        r"VACUUM|ANALYZE|REFRESH|REINDEX)\b"
+    )
 
-        if keyword in normalized:
-            raise ValueError(
-                f"Unsafe SQL detected: {keyword.strip()}"
-            )
+    if re.search(dangerous_pattern, query, re.IGNORECASE):
+        raise ValueError("The SQL contains a prohibited operation.")
+
+    if re.search(r"\bINTO\b", query, re.IGNORECASE):
+        raise ValueError("SELECT INTO is not allowed.")
+
+    unsafe_functions = (
+        r"\b(pg_read_file|pg_read_binary_file|pg_ls_dir|"
+        r"pg_write_file|lo_import|lo_export)\s*\("
+    )
+
+    if re.search(unsafe_functions, query, re.IGNORECASE):
+        raise ValueError("Unsafe database functions are not allowed.")
 
 
 # ==========================================================
-# COMMON SQL QUESTIONS
+# SCHEMA-AWARE HELPERS
 # ==========================================================
 
-def get_local_sql(
-    question: str,
-) -> tuple[str, str] | None:
-    """
-    Common questions are converted directly to SQL.
+def _schema_has_customers_table(schema: Any) -> bool:
+    """Check whether the schema mentions the CUSTOMERS table."""
 
-    Returns:
-        (sql, query_type)
+    if not schema:
+        return False
 
-    No Ollama call required.
-    """
-
-    q = normalize_question(
-        question
+    return bool(
+        re.search(
+            r"\bCUSTOMERS\b",
+            str(schema),
+            re.IGNORECASE,
+        )
     )
 
 
-    # ======================================================
-    # TOTAL CUSTOMERS
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "how many customer do we have",
-            "how many customer",
-            "total customer",
-            "number of customer",
-            "customer count",
-            "kitne customer",
-        ],
-    ) and "state" not in q:
-
-        return (
-            """
-            SELECT COUNT(*) AS total_customers
-            FROM customers;
-            """,
-            "total_customers",
-        )
-
-
-    # ======================================================
-    # TOTAL POLICIES
-    # ======================================================
-
-    if (
-        contains_any(
-            q,
-            [
-                "how many policy do we have",
-                "total policy",
-                "policy count",
-                "kitni policy",
-            ],
-        )
-        and not contains_any(
-            q,
-            [
-                "agent",
-                "top",
-                "sold",
-                "sales",
-                "channel",
-                "state",
-                "customer",
-                "premium",
-                "claim",
-                "type",
-                "by ",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT COUNT(*) AS total_policies
-            FROM policies;
-            """,
-            "total_policies",
-        )
-
-
-    # ======================================================
-    # TOTAL CLAIMS
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "how many claim",
-            "total claim",
-            "number of claim",
-            "claim count",
-            "kitne claim",
-        ],
-    ) and "type" not in q and "amount" not in q:
-
-        return (
-            """
-            SELECT COUNT(*) AS total_claims
-            FROM claims;
-            """,
-            "total_claims",
-        )
-
-
-    # ======================================================
-    # TOTAL AGENTS
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "how many agent",
-            "total agent",
-            "number of agent",
-            "agent count",
-        ],
-    ):
-
-        return (
-            """
-            SELECT COUNT(*) AS total_agents
-            FROM agents;
-            """,
-            "total_agents",
-        )
-
-
-    # ======================================================
-    # PREMIUM TRANSACTION COUNT
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "how many premium transaction",
-            "premium transaction count",
-            "total premium transaction",
-        ],
-    ):
-
-        return (
-            """
-            SELECT COUNT(*) AS total_premium_transactions
-            FROM premiums;
-            """,
-            "total_premium_transactions",
-        )
-
-
-    # ======================================================
-    # RENEWAL RECORD COUNT
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "how many renewal record",
-            "total renewal record",
-            "renewal record count",
-        ],
-    ):
-
-        return (
-            """
-            SELECT COUNT(*) AS total_renewal_records
-            FROM renewals;
-            """,
-            "total_renewal_records",
-        )
-
-
-    # ======================================================
-    # UNDERWRITING RECORD COUNT
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "how many underwriting record",
-            "total underwriting record",
-            "underwriting record count",
-        ],
-    ):
-
-        return (
-            """
-            SELECT COUNT(*) AS total_underwriting_records
-            FROM underwriting;
-            """,
-            "total_underwriting_records",
-        )
-
-
-    # ======================================================
-    # AVERAGE PREMIUM
-    # ======================================================
-
-    if (
-        contains_any(
-            q,
-            [
-                "average premium",
-                "avg premium",
-                "mean premium",
-            ],
-        )
-        and "policy type" not in q
-        and "state" not in q
-    ):
-
-        return (
-            """
-            SELECT ROUND(
-                AVG(annual_premium)::numeric,
-                2
-            ) AS average_annual_premium
-            FROM policies;
-            """,
-            "average_premium",
-        )
-
-
-    # ======================================================
-    # TOTAL PREMIUM
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "total annual premium",
-            "total premium",
-            "sum of premium",
-        ],
-    ) and "policy type" not in q:
-
-        return (
-            """
-            SELECT
-                SUM(annual_premium)
-                AS total_annual_premium
-            FROM policies;
-            """,
-            "total_premium",
-        )
-
-
-    # ======================================================
-    # STATE WITH MOST CUSTOMERS
-    # ======================================================
-
-    if (
-        "state" in q
-        and "customer" in q
-        and contains_any(
-            q,
-            [
-                "most",
-                "highest",
-                "maximum",
-                "max",
-                "sabse jyada",
-                "sabse zyada",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                state,
-                COUNT(*) AS total_customers
-            FROM customers
-            GROUP BY state
-            ORDER BY total_customers DESC
-            LIMIT 1;
-            """,
-            "top_customer_state",
-        )
-
-
-    # ======================================================
-    # CUSTOMER DISTRIBUTION BY STATE
-    # ======================================================
-
-    if (
-        "customer" in q
-        and "state" in q
-        and contains_any(
-            q,
-            [
-                "distribution",
-                "breakdown",
-                "by state",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                state,
-                COUNT(*) AS total_customers
-            FROM customers
-            GROUP BY state
-            ORDER BY total_customers DESC;
-            """,
-            "customers_by_state",
-        )
-
-
-    # ======================================================
-    # AVAILABLE POLICY TYPES
-    # ======================================================
-
-    if (
-        "policy type" in q
-        and contains_any(
-            q,
-            [
-                "what",
-                "which",
-                "show",
-                "list",
-                "available",
-                "exist",
-                "have",
-            ],
-        )
-        and "premium" not in q
-        and "highest" not in q
-    ):
-
-        return (
-            """
-            SELECT DISTINCT policy_type
-            FROM policies
-            WHERE policy_type IS NOT NULL
-            ORDER BY policy_type;
-            """,
-            "policy_types",
-        )
-
-
-    # ======================================================
-    # POLICY DISTRIBUTION BY TYPE
-    # ======================================================
-
-    if (
-        "policy" in q
-        and "type" in q
-        and contains_any(
-            q,
-            [
-                "distribution",
-                "breakdown",
-                "count by",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                policy_type,
-                COUNT(*) AS total_policies
-            FROM policies
-            GROUP BY policy_type
-            ORDER BY total_policies DESC;
-            """,
-            "policies_by_type",
-        )
-
-
-    # ======================================================
-    # POLICY TYPE WITH HIGHEST AVERAGE PREMIUM
-    # ======================================================
-
-    if (
-        "policy" in q
-        and "premium" in q
-        and contains_any(
-            q,
-            [
-                "average",
-                "avg",
-                "mean",
-            ],
-        )
-        and contains_any(
-            q,
-            [
-                "highest",
-                "most",
-                "maximum",
-                "max",
-                "sabse jyada",
-                "sabse zyada",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                policy_type,
-                ROUND(
-                    AVG(annual_premium)::numeric,
-                    2
-                ) AS average_annual_premium
-            FROM policies
-            GROUP BY policy_type
-            ORDER BY average_annual_premium DESC
-            LIMIT 1;
-            """,
-            "highest_average_premium_policy_type",
-        )
-
-
-    # ======================================================
-    # POLICY TYPE WITH HIGHEST TOTAL PREMIUM
-    # ======================================================
-
-    if (
-        "policy" in q
-        and "premium" in q
-        and contains_any(
-            q,
-            [
-                "highest",
-                "most",
-                "maximum",
-                "generates the highest",
-                "sabse jyada",
-                "sabse zyada",
-            ],
-        )
-        and not contains_any(
-            q,
-            [
-                "average",
-                "avg",
-                "mean",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                policy_type,
-                SUM(annual_premium)
-                AS total_annual_premium
-            FROM policies
-            GROUP BY policy_type
-            ORDER BY total_annual_premium DESC
-            LIMIT 1;
-            """,
-            "highest_premium_policy_type",
-        )
-
-
-    # ======================================================
-    # AVERAGE PREMIUM BY POLICY TYPE
-    # ======================================================
-
-    if (
-        "policy" in q
-        and "premium" in q
-        and contains_any(
-            q,
-            [
-                "average",
-                "avg",
-                "mean",
-            ],
-        )
-        and contains_any(
-            q,
-            [
-                "by policy type",
-                "policy type",
-                "breakdown",
-                "compare",
-                "show",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                policy_type,
-                ROUND(
-                    AVG(annual_premium)::numeric,
-                    2
-                ) AS average_annual_premium
-            FROM policies
-            GROUP BY policy_type
-            ORDER BY average_annual_premium DESC;
-            """,
-            "average_premium_by_policy_type",
-        )
-
-
-    # ======================================================
-    # POLICY TYPE PREMIUM BREAKDOWN
-    # ======================================================
-
-    if (
-        "policy type" in q
-        and "premium" in q
-        and contains_any(
-            q,
-            [
-                "show",
-                "breakdown",
-                "by policy type",
-                "compare",
-            ],
-        )
-        and not contains_any(
-            q,
-            [
-                "average",
-                "avg",
-                "mean",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                policy_type,
-                SUM(annual_premium)
-                AS total_annual_premium
-            FROM policies
-            GROUP BY policy_type
-            ORDER BY total_annual_premium DESC;
-            """,
-            "premium_by_policy_type",
-        )
-
-
-    # ======================================================
-    # TOTAL CLAIM AMOUNT
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "total claim amount",
-            "sum of claim amount",
-        ],
-    ):
-
-        return (
-            """
-            SELECT
-                SUM(claim_amount)
-                AS total_claim_amount
-            FROM claims;
-            """,
-            "total_claim_amount",
-        )
-
-
-    # ======================================================
-    # AVERAGE CLAIM AMOUNT
-    # ======================================================
-
-    if contains_any(
-        q,
-        [
-            "average claim amount",
-            "avg claim amount",
-            "mean claim amount",
-        ],
-    ):
-
-        return (
-            """
-            SELECT
-                ROUND(
-                    AVG(claim_amount)::numeric,
-                    2
-                ) AS average_claim_amount
-            FROM claims;
-            """,
-            "average_claim_amount",
-        )
-
-
-    # ======================================================
-    # CLAIM DISTRIBUTION BY TYPE
-    # ======================================================
-
-    if (
-        "claim" in q
-        and "type" in q
-        and contains_any(
-            q,
-            [
-                "distribution",
-                "breakdown",
-                "count",
-                "most common",
-                "occur",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                claim_type,
-                COUNT(*) AS total_claims
-            FROM claims
-            GROUP BY claim_type
-            ORDER BY total_claims DESC;
-            """,
-            "claims_by_type",
-        )
-
-
-    # ======================================================
-    # CLAIM TYPE WITH HIGHEST TOTAL CLAIM AMOUNT
-    # ======================================================
-
-    if (
-        "claim type" in q
-        and "claim amount" in q
-        and contains_any(
-            q,
-            [
-                "highest",
-                "maximum",
-                "most",
-                "sabse jyada",
-                "sabse zyada",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                claim_type,
-                SUM(claim_amount)
-                AS total_claim_amount
-            FROM claims
-            GROUP BY claim_type
-            ORDER BY total_claim_amount DESC
-            LIMIT 1;
-            """,
-            "highest_claim_type",
-        )
-
-
-    # ======================================================
-    # CLAIM SEVERITY DISTRIBUTION
-    # ======================================================
-
-    if (
-        "claim" in q
-        and "severity" in q
-        and contains_any(
-            q,
-            [
-                "distribution",
-                "breakdown",
-                "show",
-                "count",
-            ],
-        )
-    ):
-
-        return (
-            """
-            SELECT
-                claim_severity,
-                COUNT(*) AS total_claims
-            FROM claims
-            GROUP BY claim_severity
-            ORDER BY total_claims DESC;
-            """,
-            "claims_by_severity",
-        )
-
-
-    # ======================================================
-    # SPECIFIC POLICY TYPE COUNT
-    # ======================================================
-
-    known_policy_types = [
-        "health",
-        "motor",
-        "term life",
-        "whole life",
-        "travel",
-        "home",
-        "commercial",
-        "personal accident",
-    ]
-
-
-    for policy_type in known_policy_types:
-
-        if (
-            policy_type in q
-            and "policy" in q
-            and contains_any(
-                q,
-                [
-                    "how many",
-                    "count",
-                    "total",
-                    "kitni",
-                ],
-            )
-        ):
-
-            return (
-                f"""
-                SELECT
-                    COUNT(*) AS total_policies
-                FROM policies
-                WHERE LOWER(policy_type)
-                    = '{policy_type}';
-                """,
-                "specific_policy_count",
-            )
-
-
-    # No local match
-    return None
+def _is_customer_count_question(question: str) -> bool:
+    """Recognize common requests for total customer counts."""
+
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        question.lower(),
+    ).strip(" \t\r\n?!.,")
+
+    patterns = (
+        r"total customers?",
+        r"count customers?",
+        r"number of customers?",
+        r"total number of customers?",
+        r"how many customers (?:are there|do we have|are in (?:the )?database)?",
+    )
+
+    return any(
+        re.fullmatch(pattern, normalized)
+        for pattern in patterns
+    )
+
+
+def _is_state_group_question(question: str) -> bool:
+    """Recognize questions asking for customer counts by state."""
+
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        question.lower(),
+    ).strip(" \t\r\n?!.,")
+
+    patterns = (
+        r"\bcustomers?\b.*\b(each|per|by)\s+state\b",
+        r"\bstate[- ]wise customers?\b",
+        r"\bcustomers?\s+in\s+each\s+state\b",
+        r"\bhow many customers?\b.*\bstate\b",
+        r"\bnumber of customers?\b.*\bstate\b",
+        r"\bcount of customers?\b.*\bstate\b",
+    )
+
+    return any(
+        re.search(pattern, normalized)
+        for pattern in patterns
+    )
 
 
 # ==========================================================
-# RESULT HELPERS
+# SQL GENERATION
 # ==========================================================
 
-def format_number(
-    value: Any,
-) -> str:
+def generate_sql(question: str) -> str:
+    """Generate read-only PostgreSQL using the database schema."""
+
+    if not question or not question.strip():
+        raise ValueError("Please enter a question.")
+
+    schema = get_database_schema()
+
+    if not schema:
+        raise ValueError("Could not retrieve the database schema.")
+
+    normalized_question = re.sub(
+        r"\s+",
+        " ",
+        question.lower(),
+    ).strip(" \t\r\n?!.,")
+
+    schema_text = str(schema).lower()
+
+    # ------------------------------------------------------
+    # 1. Total number of policies
+    # ------------------------------------------------------
+
+    is_policy_count = re.search(
+        r"\b(how many|total number of|number of|total)\s+policies\b",
+        normalized_question,
+    )
+
+    if "policies" in schema_text and is_policy_count:
+        sql = """
+            SELECT COUNT(*) AS policy_count
+            FROM policies
+        """
+
+        validate_sql(sql)
+        logger.info("Generated policy-count SQL.")
+        return sql.strip()
+
+    # ------------------------------------------------------
+    # 2. Overdue premium payments
+    # ------------------------------------------------------
+
+    is_overdue_question = (
+        bool(
+            re.search(
+                r"\b(overdue|past due)\b",
+                normalized_question,
+            )
+        )
+        and bool(
+            re.search(
+                r"\b(payment|payments|premium|premiums)\b",
+                normalized_question,
+            )
+        )
+    )
+
+    if (
+        "premiums" in schema_text
+        and "payment_status" in schema_text
+        and is_overdue_question
+    ):
+        sql = """
+            SELECT COUNT(*) AS overdue_payments
+            FROM premiums
+            WHERE LOWER(payment_status) = 'overdue'
+        """
+
+        validate_sql(sql)
+        logger.info("Generated overdue-payment SQL.")
+        return sql.strip()
+
+    # ------------------------------------------------------
+    # 3. Customers in each state
+    # ------------------------------------------------------
+
+    if (
+        "customers" in schema_text
+        and "customer_id" in schema_text
+        and "state" in schema_text
+        and _is_state_group_question(question)
+    ):
+        sql = """
+            SELECT
+                state,
+                COUNT(DISTINCT customer_id) AS customer_count
+            FROM customers
+            GROUP BY state
+            ORDER BY customer_count DESC, state
+        """
+
+        validate_sql(sql)
+        logger.info("Generated state-wise customer SQL.")
+        return sql.strip()
+
+    # ------------------------------------------------------
+    # 4. Total number of customers
+    # ------------------------------------------------------
+
+    if _is_customer_count_question(question):
+        if _schema_has_customers_table(schema):
+            if "customer_id" in schema_text:
+                sql = """
+                    SELECT COUNT(DISTINCT customer_id) AS total_customers
+                    FROM customers
+                """
+            else:
+                sql = """
+                    SELECT COUNT(*) AS total_customers
+                    FROM customers
+                """
+
+            validate_sql(sql)
+            logger.info("Generated deterministic customer-count SQL.")
+            return sql.strip()
+
+        logger.warning(
+            "CUSTOMERS table was not clearly identified in the schema. "
+            "Using schema-aware LLM."
+        )
+
+    # ------------------------------------------------------
+    # 5. Dynamic SQL generation through the LLM
+    # ------------------------------------------------------
+
+    prompt = f"""
+You are the SQL generation component of an Insurance AI Copilot.
+
+Convert the user's question into ONE PostgreSQL read-only query
+using the database schema provided below.
+
+DATABASE SCHEMA:
+{schema}
+
+USER QUESTION:
+{question.strip()}
+
+RULES:
+1. Use only tables and columns present in the schema.
+2. Generate valid PostgreSQL syntax.
+3. Generate exactly one SELECT or WITH ... SELECT query.
+4. Never generate data-modification statements.
+5. Use JOINs only when required and supported by the schema.
+6. Use GROUP BY and aggregate functions when appropriate.
+7. Support COUNT, SUM, AVG, MIN, MAX, CASE, DISTINCT and HAVING.
+8. Support ORDER BY, ranking, top-N and bottom-N queries.
+9. Support PostgreSQL window functions when appropriate.
+10. Support CTEs, date filtering, date grouping and string functions.
+11. Use appropriate PostgreSQL date expressions.
+12. Do not invent tables, columns, relationships or business facts.
+13. Do not assume a join key unless supported by the schema.
+14. Avoid SELECT * unless explicitly requested.
+15. Use clear column aliases.
+16. Return only the SQL query, without Markdown or explanation.
+
+SQL:
+"""
+
+    response = llm.invoke(prompt)
+    content = getattr(response, "content", response)
+
+    sql = clean_sql(str(content))
+    validate_sql(sql)
+
+    logger.info("Generated SQL: %s", sql)
+    return sql
+
+
+# ==========================================================
+# RESULT FORMATTING
+# ==========================================================
+
+def format_value(value: Any) -> str:
+    """Format database values for readable output."""
 
     if value is None:
-        return "0"
+        return "NULL"
 
-    if isinstance(
-        value,
-        Decimal,
-    ):
-        value = float(value)
-
-    if isinstance(
-        value,
-        float,
-    ):
-
-        if value.is_integer():
-            return f"{int(value):,}"
-
+    if isinstance(value, Decimal):
         return f"{value:,.2f}"
 
-    if isinstance(
-        value,
-        int,
-    ):
+    if isinstance(value, float):
+        return f"{value:,.2f}"
+
+    if isinstance(value, int):
         return f"{value:,}"
 
     return str(value)
 
 
-def first_row(
-    results: list[dict],
-) -> dict:
+def generate_result_summary(results: list[dict]) -> str:
+    """Format SQL results as a readable Markdown table."""
+
+    if not isinstance(results, list):
+        return str(results)
 
     if not results:
-        return {}
+        return (
+            "The query executed successfully, "
+            "but no matching records were found."
+        )
 
-    return results[0]
+    if not all(isinstance(row, dict) for row in results):
+        return str(results)
+
+    columns = list(results[0].keys())
+
+    if not columns:
+        return "The query returned no displayable columns."
+
+    headers = [
+        str(column).replace("_", " ").title()
+        for column in columns
+    ]
+
+    lines = [
+        "| " + " | ".join(headers) + " |",
+        "| " + " | ".join(["---"] * len(columns)) + " |",
+    ]
+
+    for row in results[:50]:
+        values = []
+
+        for column in columns:
+            value = format_value(row.get(column))
+            value = value.replace("|", r"\|").replace("\n", " ")
+            values.append(value)
+
+        lines.append("| " + " | ".join(values) + " |")
+
+    answer = "\n".join(lines)
+
+    if len(results) > 50:
+        answer += (
+            f"\n\nShowing the first 50 of "
+            f"{len(results)} returned rows."
+        )
+
+    return answer
 
 
 # ==========================================================
-# LOCAL ANSWER GENERATION
+# NATURAL-LANGUAGE RESULT EXPLANATION
 # ==========================================================
 
-def generate_local_answer(
-    query_type: str,
+def generate_natural_answer(
+    question: str,
+    sql: str,
     results: list[dict],
 ) -> str:
+    """Explain SQL results without inventing values or context."""
+
+    if not isinstance(results, list):
+        return str(results)
 
     if not results:
         return (
@@ -996,557 +434,211 @@ def generate_local_answer(
             "but no matching records were found."
         )
 
+    result_text = generate_result_summary(results)
 
-    row = first_row(
-        results
-    )
+    normalized_question = re.sub(
+        r"\s+",
+        " ",
+        question.lower(),
+    ).strip(" \t\r\n?!.,")
 
+    normalized_sql = sql.lower()
 
-    if query_type == "total_customers":
+    # ------------------------------------------------------
+    # 1. Deterministic response for customers by state
+    # ------------------------------------------------------
 
-        return (
-            f"We currently have "
-            f"**{format_number(row.get('total_customers'))} customers**."
-        )
-
-
-    if query_type == "total_policies":
-
-        return (
-            f"We currently have "
-            f"**{format_number(row.get('total_policies'))} policies**."
-        )
-
-
-    if query_type == "total_claims":
-
-        return (
-            f"We currently have "
-            f"**{format_number(row.get('total_claims'))} claims**."
-        )
-
-
-    if query_type == "total_agents":
-
-        return (
-            f"We currently have "
-            f"**{format_number(row.get('total_agents'))} agents**."
-        )
-
-
-    if query_type == "total_premium_transactions":
-
-        return (
-            f"The database contains "
-            f"**{format_number(row.get('total_premium_transactions'))} "
-            f"premium transactions**."
-        )
-
-
-    if query_type == "total_renewal_records":
-
-        return (
-            f"The database contains "
-            f"**{format_number(row.get('total_renewal_records'))} "
-            f"renewal records**."
-        )
-
-
-    if query_type == "total_underwriting_records":
-
-        return (
-            f"The database contains "
-            f"**{format_number(row.get('total_underwriting_records'))} "
-            f"underwriting records**."
-        )
-
-
-    if query_type == "average_premium":
-
-        return (
-            "The average annual premium is "
-            f"**₹{format_number(row.get('average_annual_premium'))}**."
-        )
-
-
-    if query_type == "total_premium":
-
-        return (
-            "The total annual premium is "
-            f"**₹{format_number(row.get('total_annual_premium'))}**."
-        )
-
-
-    if query_type == "top_customer_state":
-
-        return (
-            f"**{row.get('state')}** has the most customers, "
-            f"with **{format_number(row.get('total_customers'))} customers**."
-        )
-
-
-    if query_type == "customers_by_state":
-
-        return (
-            "### Customer Distribution by State\n\n"
-            + generate_result_summary(results)
-        )
-
-
-    if query_type == "policy_types":
-
-        policy_types = [
-            str(item.get("policy_type"))
-            for item in results
-            if item.get("policy_type")
+    if (
+        _is_state_group_question(normalized_question)
+        and "group by state" in normalized_sql
+        and all(isinstance(row, dict) for row in results)
+        and "state" in results[0]
+        and "customer_count" in results[0]
+    ):
+        lines = [
+            "The following table shows the number of unique "
+            "customers registered in each state across the "
+            "insurance database.",
+            "",
+            "| State | Customer Count |",
+            "|---|---:|",
         ]
 
-        return (
-            "The policy types available in the database are: "
-            + ", ".join(policy_types)
-            + "."
-        )
+        total_customers = 0
 
+        for row in results:
+            state = row.get("state")
+            count = row.get("customer_count")
 
-    if query_type == "policies_by_type":
+            if isinstance(count, (int, float, Decimal)):
+                total_customers += int(count)
 
-        return (
-            "### Policy Distribution by Type\n\n"
-            + generate_result_summary(results)
-        )
+            state_label = (
+                str(state)
+                if state is not None
+                else "Unknown"
+            )
 
+            lines.append(
+                f"| {state_label} | {format_value(count)} |"
+            )
 
-    if query_type == "highest_average_premium_policy_type":
+        lines.extend([
+            "",
+            (
+                f"**Total across the returned state groups: "
+                f"{format_value(total_customers)} customers.**"
+            ),
+            "",
+            "These are database-wide customer counts grouped "
+            "by state, not counts for a single insurance policy.",
+        ])
 
-        return (
-            f"**{row.get('policy_type')}** has the highest "
-            f"average annual premium at "
-            f"**₹{format_number(row.get('average_annual_premium'))}**."
-        )
+        return "\n".join(lines)
 
+    # ------------------------------------------------------
+    # 2. Deterministic response for single-value aggregates
+    # ------------------------------------------------------
 
-    if query_type == "highest_premium_policy_type":
+    if (
+        len(results) == 1
+        and isinstance(results[0], dict)
+        and len(results[0]) == 1
+    ):
+        column, value = next(iter(results[0].items()))
 
-        return (
-            f"**{row.get('policy_type')}** generates the highest "
-            f"total annual premium at "
-            f"**₹{format_number(row.get('total_annual_premium'))}**."
-        )
+        if isinstance(value, (int, float, Decimal)):
+            if column == "overdue_payments":
+                return f"Overdue payments: {format_value(value)}"
 
+            if column == "total_customers":
+                return f"Total customers: {format_value(value)}"
 
-    if query_type == "average_premium_by_policy_type":
+            if column == "policy_count":
+                return f"Total policies: {format_value(value)}"
 
-        return (
-            "### Average Annual Premium by Policy Type\n\n"
-            + generate_result_summary(results)
-        )
+            label = str(column).replace("_", " ")
+            return f"{label.capitalize()}: {format_value(value)}"
 
-
-    if query_type == "premium_by_policy_type":
-
-        return (
-            "### Total Annual Premium by Policy Type\n\n"
-            + generate_result_summary(results)
-        )
-
-
-    if query_type == "total_claim_amount":
-
-        return (
-            "The total claim amount is "
-            f"**₹{format_number(row.get('total_claim_amount'))}**."
-        )
-
-
-    if query_type == "average_claim_amount":
-
-        return (
-            "The average claim amount is "
-            f"**₹{format_number(row.get('average_claim_amount'))}**."
-        )
-
-
-    if query_type == "claims_by_type":
-
-        return (
-            "### Claims by Type\n\n"
-            + generate_result_summary(results)
-        )
-
-
-    if query_type == "highest_claim_type":
-
-        return (
-            f"**{row.get('claim_type')}** has the highest total "
-            f"claim amount at "
-            f"**₹{format_number(row.get('total_claim_amount'))}**."
-        )
-
-
-    if query_type == "claims_by_severity":
-
-        return (
-            "### Claims by Severity\n\n"
-            + generate_result_summary(results)
-        )
-
-
-    if query_type == "specific_policy_count":
-
-        return (
-            f"The database contains "
-            f"**{format_number(row.get('total_policies'))} matching policies**."
-        )
-
-
-    return (
-        f"The query returned "
-        f"**{len(results)} row(s)**."
-    )
-
-
-# ==========================================================
-# OLLAMA SQL GENERATION
-# ==========================================================
-
-def generate_sql(
-    question: str,
-) -> str:
-    """
-    Used only when the question is not covered
-    by our fast local SQL rules.
-    """
-
-    logger.info(
-        "Starting natural-language to SQL generation"
-    )
-
-    schema = get_database_schema()
-
+    # ------------------------------------------------------
+    # 3. LLM explanation for other SQL results
+    # ------------------------------------------------------
 
     prompt = f"""
-/no_think
+You are the answer-generation component of an Insurance AI Copilot.
 
-You are the SQL engine for an Insurance AI Copilot.
+Answer the user's question using ONLY the actual SQL results below.
 
-Convert the user's question into ONE safe PostgreSQL SELECT query.
-
-DATABASE SCHEMA
----------------
-{schema}
-
-
-USER QUESTION
--------------
+USER QUESTION:
 {question}
 
+SQL EXECUTED:
+{sql}
 
-RULES
------
+ACTUAL SQL RESULTS:
+{result_text}
 
-1. Use only tables and columns present in the schema.
+RULES:
+1. Answer the question directly and clearly.
+2. Use only values present in the SQL results.
+3. Do not invent numbers, records, causes or business conclusions.
+4. Include the table when it helps answer the question.
+5. Explain SQL output in simple business language.
+6. Do not describe database-wide results as belonging to a
+   single insurance policy unless the SQL explicitly filters
+   for that policy.
+7. Do not claim that a prediction was generated unless the
+   results actually contain it.
+8. Do not reveal hidden reasoning.
+9. Use readable Markdown.
+10. Clearly distinguish overall database statistics from
+    policy-specific statistics.
 
-2. PostgreSQL syntax only.
-
-3. Generate only a SELECT query or a WITH ... SELECT query.
-
-4. Never generate:
-   INSERT
-   UPDATE
-   DELETE
-   DROP
-   ALTER
-   CREATE
-   TRUNCATE
-
-5. Do not invent columns.
-
-6. Use JOINs only when required.
-
-7. Use meaningful aliases.
-
-8. For ranking questions, use ORDER BY and LIMIT.
-
-9. For aggregate questions, use appropriate GROUP BY.
-
-10. Return SQL only.
-
-11. Do not use markdown.
-
-12. Do not include ```sql.
-
-13. Do not explain the query.
-
-SQL:
+ANSWER:
 """
 
+    try:
+        response = llm.invoke(prompt)
+        content = getattr(response, "content", response)
+        answer = str(content).strip()
 
-    response = llm.invoke(
-        prompt
-    )
+        if answer:
+            return answer
 
-
-    sql = clean_sql(
-        response.content
-    )
-
-
-    validate_sql(
-        sql
-    )
-
-
-    logger.info(
-        "Generated SQL: %s",
-        sql,
-    )
-
-
-    return sql
-
-
-# ==========================================================
-# FALLBACK RESULT SUMMARY
-# ==========================================================
-
-def generate_result_summary(
-    results: list[dict],
-) -> str:
-    """
-    Create a readable answer from SQL results locally.
-
-    No second Ollama call is required.
-    """
-
-    if not results:
-
-        return (
-            "The query executed successfully, "
-            "but no matching records were found."
+    except Exception:
+        logger.exception(
+            "Natural-language answer generation failed."
         )
 
-    # ======================================================
-    # SINGLE ROW
-    # ======================================================
-
-    if len(results) == 1:
-
-        row = results[0]
-
-        parts = []
-
-        for key, value in row.items():
-
-            readable_key = (
-                key
-                .replace("_", " ")
-                .title()
-            )
-
-            if (
-                "premium" in key.lower()
-                or "amount" in key.lower()
-            ):
-
-                formatted_value = (
-                    f"₹{format_number(value)}"
-                )
-
-            else:
-
-                formatted_value = (
-                    format_number(value)
-                )
-
-            parts.append(
-                f"**{readable_key}:** "
-                f"{formatted_value}"
-            )
-
-        return "\n\n".join(parts)
-
-    # ======================================================
-    # MULTIPLE ROWS -> MARKDOWN TABLE
-    # ======================================================
-
-    columns = list(
-        results[0].keys()
-    )
-
-    headers = [
-        column
-        .replace("_", " ")
-        .title()
-        for column in columns
-    ]
-
-    lines = [
-        "| " + " | ".join(headers) + " |",
-        "| "
-        + " | ".join(
-            ["---"] * len(columns)
-        )
-        + " |",
-    ]
-
-    for row in results[:20]:
-
-        values = []
-
-        for column in columns:
-
-            value = row.get(
-                column
-            )
-
-            if (
-                "premium" in column.lower()
-                or "amount" in column.lower()
-            ):
-
-                formatted = (
-                    f"₹{format_number(value)}"
-                )
-
-            else:
-
-                formatted = (
-                    format_number(value)
-                )
-
-            values.append(
-                formatted
-            )
-
-        lines.append(
-            "| "
-            + " | ".join(values)
-            + " |"
-        )
-
-    answer = "\n".join(
-        lines
-    )
-
-    if len(results) > 20:
-
-        answer += (
-            f"\n\nShowing the first **20** "
-            f"of **{len(results)}** results."
-        )
-
-    return answer
+    return result_text
 
 
 # ==========================================================
 # MAIN SQL AGENT
 # ==========================================================
 
-def ask_sql_agent(
-    question: str,
-) -> dict[str, Any]:
+def ask_sql_agent(question: str) -> dict[str, Any]:
+    """
+    Main SQL Agent entry point.
+
+    Flow:
+    1. Receive the user's question.
+    2. Retrieve the database schema.
+    3. Generate SQL.
+    4. Validate SQL.
+    5. Execute the query.
+    6. Explain the actual results.
+    """
 
     logger.info(
-        "SQL Agent request received"
+        "SQL Agent request received: %s",
+        question,
     )
 
+    try:
+        sql = generate_sql(question)
 
-    # ======================================================
-    # STEP 1 — TRY LOCAL SQL
-    # ======================================================
+        # Validate immediately before execution.
+        validate_sql(sql)
 
-    local_match = get_local_sql(
-        question
-    )
+        results = run_query(sql)
 
+        if results is None:
+            results = []
+        elif not isinstance(results, list):
+            results = list(results)
 
-    if local_match:
-
-        sql, query_type = local_match
-
-        sql = clean_sql(
-            sql
+        answer = generate_natural_answer(
+            question=question,
+            sql=sql,
+            results=results,
         )
-
-        validate_sql(
-            sql
-        )
-
-
-        logger.info(
-            "Using local SQL rule: %s",
-            query_type,
-        )
-
-
-        results = run_query(
-            sql
-        )
-
-
-        answer = generate_local_answer(
-            query_type,
-            results,
-        )
-
 
         return {
-
-            "question":
-                question,
-
-            "sql":
-                sql,
-
-            "results":
-                results,
-
-            "answer":
-                answer,
-
-            "source":
-                "local_sql_rule",
+            "question": question,
+            "sql": sql,
+            "results": results,
+            "answer": answer,
+            "source": "dynamic_sql_agent",
+            "success": True,
         }
 
-
-    # ======================================================
-    # STEP 2 — OLLAMA FALLBACK
-    # ======================================================
-
-    logger.info(
-        "No local SQL rule matched. Using Ollama."
-    )
-
-
-    sql = generate_sql(
-        question
-    )
-
-
-    results = run_query(
-        sql
-    )
-
-
-    answer = generate_result_summary(
-        results
-    )
-
-
-    return {
-
-        "question":
+    except Exception as exc:
+        logger.exception(
+            "SQL Agent failed while processing question: %s",
             question,
+        )
 
-        "sql":
-            sql,
-
-        "results":
-            results,
-
-        "answer":
-            answer,
-
-        "source":
-            "ollama_sql_generation",
-    }
+        return {
+            "question": question,
+            "sql": None,
+            "results": [],
+            "answer": (
+                "I could not complete that database query. "
+                "Please check the question, database schema, "
+                "and application logs."
+            ),
+            "error": f"{type(exc).__name__}: {exc}",
+            "source": "dynamic_sql_agent",
+            "success": False,
+        }

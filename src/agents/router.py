@@ -618,6 +618,12 @@ def detect_route(
         question
     )
 
+    # Detect database entities before SQL routing checks use this variable.
+    has_database_entity = contains_any(
+        q,
+        DATABASE_ENTITIES,
+    )
+
     # ======================================================
     # ML
     # ======================================================
@@ -650,6 +656,59 @@ def detect_route(
     ):
 
         return "rag"
+
+    # ======================================================
+    # SQL - FLEXIBLE NATURAL-LANGUAGE DATA QUESTIONS
+    # Keep this after explicit document/RAG checks and ML
+    # checks so those intents retain their existing priority.
+    # ======================================================
+
+    sql_operation_phrases = [
+        "show", "display", "list", "find", "get", "give me",
+        "which", "how many", "count", "total", "sum", "average",
+        "avg", "minimum", "maximum", "min", "max", "top",
+        "bottom", "rank", "ranking", "order by", "group by",
+        "lag", "lead", "row number", "dense rank", "ntile",
+        "running total", "rolling", "previous", "next",
+        "monthly", "daily", "yearly", "last 7 days", "last 6 months",
+        "uppercase", "lowercase", "length of", "substring",
+        "concat", "contains", "greater than", "less than",
+        "above", "below", "between", "per state", "by state",
+        "by policy type", "from",
+    ]
+
+    has_sql_operation = contains_any(
+        q,
+        sql_operation_phrases,
+    )
+
+    has_sql_function = contains_any(
+        q,
+        [
+            "avg(", "sum(", "min(", "max(", "count(",
+            "rank(", "dense_rank", "row_number", "lag(",
+            "lead(", "ntile(", "date_trunc", "extract(",
+            "substring(", "concat(", "upper(", "lower(",
+            "partition by", "over (", " over ", "cte",
+            "common table expression", "window function",
+        ],
+    )
+
+    if has_database_entity and (has_sql_operation or has_sql_function):
+        return "sql"
+
+    # Generic record requests such as "show all customers from Karnataka"
+    # may not contain a specific analytics phrase.
+    has_record_request = contains_any(
+        q,
+        ["show all", "list all", "display all", "get all",
+         "all customer", "all policy", "all claim", "all premium",
+         "all renewal", "from karnataka", "in karnataka",
+         "from odisha", "in odisha", "from maharashtra", "in maharashtra"],
+    )
+
+    if has_database_entity and has_record_request:
+        return "sql"
 
     # ======================================================
     # RAG - FLEXIBLE CLAIM PROCESS QUESTIONS

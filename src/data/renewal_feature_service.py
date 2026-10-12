@@ -1,608 +1,638 @@
-# src/data/renewal_feature_service.py
+from pathlib import Path
 
-from sqlalchemy import text
-
-from src.data.db import engine
-
-
-# ==========================================================
-# MODEL FEATURES
-# ==========================================================
-
-RENEWAL_MODEL_FEATURES = [
-
-    # Numeric
-    "AGE",
-    "ANNUAL_INCOME",
-    "CREDIT_SCORE",
-    "SUM_INSURED",
-    "ANNUAL_PREMIUM",
-    "RISK_SCORE",
-    "PREMIUM_INCREASE_PCT",
-    "CUSTOMER_TENURE_YEARS",
-    "TOTAL_PAYMENTS",
-    "AVG_PAYMENT_DELAY",
-    "MAX_PAYMENT_DELAY",
-    "TOTAL_CLAIMS",
-    "TOTAL_CLAIM_AMOUNT",
-    "AVG_CLAIM_AMOUNT",
-    "MAX_CLAIM_AMOUNT",
-
-    # Categorical
-    "GENDER",
-    "MARITAL_STATUS",
-    "OCCUPATION",
-    "STATE",
-    "CUSTOMER_RISK_SEGMENT",
-    "POLICY_TYPE",
-    "SALES_CHANNEL",
-    "PAYMENT_MODE",
-    "RISK_BAND",
-]
+import pandas as pd
+import numpy as np
 
 
-# ==========================================================
-# GET RENEWAL CASE
-# ==========================================================
+# ============================================================
+# PATHS
+# ============================================================
 
-def get_renewal_case_by_policy_id(
-    policy_id: str,
-):
-
-    policy_id = (
-        policy_id
-        .strip()
-        .upper()
-    )
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+RAW_DIR = PROJECT_ROOT / "data" / "raw"
 
 
-    query = text(
-        """
-        WITH payment_summary AS
-        (
-            SELECT
+# ============================================================
+# RENEWAL FEATURE SERVICE
+# ============================================================
 
-                policy_id,
+class RenewalFeatureService:
 
-                COUNT(
-                    premium_txn_id
-                ) AS total_payments,
+    def __init__(self):
 
-                AVG(
-                    payment_delay_days
-                ) AS avg_payment_delay,
-
-                MAX(
-                    payment_delay_days
-                ) AS max_payment_delay
-
-            FROM public.premiums
-
-            GROUP BY
-                policy_id
-        ),
-
-
-        claim_summary AS
-        (
-            SELECT
-
-                policy_id,
-
-                COUNT(
-                    claim_id
-                ) AS total_claims,
-
-                SUM(
-                    claim_amount
-                ) AS total_claim_amount,
-
-                AVG(
-                    claim_amount
-                ) AS avg_claim_amount,
-
-                MAX(
-                    claim_amount
-                ) AS max_claim_amount
-
-            FROM public.claims
-
-            GROUP BY
-                policy_id
+        self.customers = pd.read_csv(
+            RAW_DIR / "customers.csv"
         )
 
+        self.policies = pd.read_csv(
+            RAW_DIR / "policies.csv"
+        )
 
-        SELECT
+        self.renewals = pd.read_csv(
+            RAW_DIR / "renewals.csv"
+        )
 
-            -- ==========================================
-            -- IDENTIFIERS
-            -- ==========================================
+        self.premiums = pd.read_csv(
+            RAW_DIR / "premiums.csv"
+        )
 
-            r.renewal_id,
+        # ----------------------------------------------------
+        # Date conversion
+        # ----------------------------------------------------
 
-            r.policy_id,
+        self.policies["POLICY_START_DATE"] = pd.to_datetime(
+            self.policies["POLICY_START_DATE"],
+            errors="coerce",
+        )
 
-            r.customer_id,
+        self.policies["POLICY_END_DATE"] = pd.to_datetime(
+            self.policies["POLICY_END_DATE"],
+            errors="coerce",
+        )
 
+        self.renewals["RENEWAL_DUE_DATE"] = pd.to_datetime(
+            self.renewals["RENEWAL_DUE_DATE"],
+            errors="coerce",
+        )
 
-            -- ==========================================
-            -- CUSTOMER FEATURES
-            -- ==========================================
+        self.premiums["DUE_DATE"] = pd.to_datetime(
+            self.premiums["DUE_DATE"],
+            errors="coerce",
+        )
 
-            c.age,
+        self.premiums["PAID_DATE"] = pd.to_datetime(
+            self.premiums["PAID_DATE"],
+            errors="coerce",
+        )
 
-            c.annual_income,
+    # ========================================================
+    # FIND RENEWAL RECORD
+    # ========================================================
 
-            c.credit_score,
+    def get_renewal_record(self, policy_id):
 
-            c.gender,
+        renewal = self.renewals[
+            self.renewals["POLICY_ID"]
+            == policy_id
+        ]
 
-            c.marital_status,
+        if renewal.empty:
 
-            c.occupation,
-
-            c.state,
-
-            c.customer_risk_segment,
-
-
-            -- ==========================================
-            -- POLICY FEATURES
-            -- ==========================================
-
-            p.sum_insured,
-
-            p.annual_premium,
-
-            p.risk_score,
-
-            p.policy_type,
-
-            p.sales_channel,
-
-            p.payment_mode,
-
-            p.risk_band,
-
-
-            -- ==========================================
-            -- RENEWAL FEATURES
-            -- ==========================================
-
-            r.premium_increase_pct,
-
-            r.loyalty_years,
-
-            r.renewal_status,
-
-
-            -- ==========================================
-            -- PAYMENT FEATURES
-            -- ==========================================
-
-            COALESCE(
-                pay.total_payments,
-                0
-            ) AS total_payments,
-
-            COALESCE(
-                pay.avg_payment_delay,
-                0
-            ) AS avg_payment_delay,
-
-            COALESCE(
-                pay.max_payment_delay,
-                0
-            ) AS max_payment_delay,
-
-
-            -- ==========================================
-            -- CLAIM FEATURES
-            -- ==========================================
-
-            COALESCE(
-                cl.total_claims,
-                0
-            ) AS total_claims,
-
-            COALESCE(
-                cl.total_claim_amount,
-                0
-            ) AS total_claim_amount,
-
-            COALESCE(
-                cl.avg_claim_amount,
-                0
-            ) AS avg_claim_amount,
-
-            COALESCE(
-                cl.max_claim_amount,
-                0
-            ) AS max_claim_amount
-
-
-        FROM public.renewals r
-
-
-        INNER JOIN public.policies p
-
-            ON r.policy_id
-            =
-            p.policy_id
-
-
-        INNER JOIN public.customers c
-
-            ON p.customer_id
-            =
-            c.customer_id
-
-
-        LEFT JOIN payment_summary pay
-
-            ON r.policy_id
-            =
-            pay.policy_id
-
-
-        LEFT JOIN claim_summary cl
-
-            ON r.policy_id
-            =
-            cl.policy_id
-
-
-        WHERE
-            r.policy_id = :policy_id
-        """
-    )
-
-
-    # ======================================================
-    # RUN QUERY
-    # ======================================================
-
-    with engine.connect() as connection:
-
-        row = (
-            connection.execute(
-                query,
-                {
-                    "policy_id":
-                        policy_id
-                },
+            raise ValueError(
+                f"No renewal record found for policy "
+                f"{policy_id}"
             )
-            .mappings()
-            .first()
-        )
 
+        return renewal.iloc[0]
 
-    # ======================================================
-    # POLICY NOT FOUND
-    # ======================================================
+    # ========================================================
+    # FIND POLICY RECORD
+    # ========================================================
 
-    if row is None:
+    def get_policy_record(self, policy_id):
 
-        raise ValueError(
-            (
-                "Renewal record not found "
-                f"for policy: {policy_id}"
+        policy = self.policies[
+            self.policies["POLICY_ID"]
+            == policy_id
+        ]
+
+        if policy.empty:
+
+            raise ValueError(
+                f"No policy record found for policy "
+                f"{policy_id}"
             )
+
+        return policy.iloc[0]
+
+    # ========================================================
+    # BUILD FEATURES
+    # ========================================================
+
+    def build_features(self, policy_id):
+
+        renewal = self.get_renewal_record(
+            policy_id
         )
 
+        policy = self.get_policy_record(
+            policy_id
+        )
 
-    row = dict(
-        row
-    )
+        # ----------------------------------------------------
+        # Dates
+        # ----------------------------------------------------
 
+        renewal_due_date = pd.to_datetime(
+            renewal["RENEWAL_DUE_DATE"],
+            errors="coerce",
+        )
 
-    # ======================================================
-    # BUILD EXACT MODEL INPUT
-    # ======================================================
+        policy_start_date = pd.to_datetime(
+            policy["POLICY_START_DATE"],
+            errors="coerce",
+        )
 
-    model_features = {
+        # ====================================================
+        # PREMIUM FEATURES
+        # ====================================================
 
-        # --------------------------------------------------
-        # CUSTOMER
-        # --------------------------------------------------
+        old_premium = float(
+            renewal["OLD_PREMIUM"]
+        )
 
-        "AGE":
-            int(
-                row[
-                    "age"
-                ]
-            ),
+        new_premium = float(
+            renewal["NEW_PREMIUM"]
+        )
 
-        "ANNUAL_INCOME":
-            float(
-                row[
-                    "annual_income"
-                ]
-            ),
+        premium_increase_pct = float(
+            renewal["PREMIUM_INCREASE_PCT"]
+        )
 
-        "CREDIT_SCORE":
-            int(
-                row[
-                    "credit_score"
-                ]
-            ),
+        premium_increase_amount = (
+            new_premium - old_premium
+        )
 
+        # ====================================================
+        # BASIC POLICY FEATURES
+        # ====================================================
 
-        # --------------------------------------------------
-        # POLICY
-        # --------------------------------------------------
+        loyalty_years = float(
+            renewal["LOYALTY_YEARS"]
+        )
 
-        "SUM_INSURED":
-            float(
-                row[
-                    "sum_insured"
-                ]
-            ),
-
-        "ANNUAL_PREMIUM":
-            float(
-                row[
-                    "annual_premium"
-                ]
-            ),
-
-        "RISK_SCORE":
-            float(
-                row[
-                    "risk_score"
-                ]
-            ),
-
-
-        # --------------------------------------------------
-        # RENEWAL
-        # --------------------------------------------------
-
-        "PREMIUM_INCREASE_PCT":
-            float(
-                row[
-                    "premium_increase_pct"
-                ]
-            ),
-
-        # Current model calls this:
-        # CUSTOMER_TENURE_YEARS
+        # ----------------------------------------------------
+        # FIX:
+        # CLAIM_HISTORY_FLAG is stored as Yes/No in CSV.
         #
-        # Renewal source stores this business concept as:
-        # LOYALTY_YEARS
+        # Yes -> 1
+        # No  -> 0
+        # ----------------------------------------------------
 
-        "CUSTOMER_TENURE_YEARS":
-            float(
-                row[
-                    "loyalty_years"
-                ]
-            ),
+        claim_value = str(
+            renewal["CLAIM_HISTORY_FLAG"]
+        ).strip().lower()
 
+        if claim_value in {
+            "yes",
+            "y",
+            "true",
+            "1",
+        }:
 
-        # --------------------------------------------------
-        # PAYMENT HISTORY
-        # --------------------------------------------------
+            claim_history_flag = 1.0
 
-        "TOTAL_PAYMENTS":
-            float(
-                row[
-                    "total_payments"
-                ]
-            ),
+        else:
 
-        "AVG_PAYMENT_DELAY":
-            float(
-                row[
-                    "avg_payment_delay"
-                ]
-            ),
+            claim_history_flag = 0.0
 
-        "MAX_PAYMENT_DELAY":
-            float(
-                row[
-                    "max_payment_delay"
-                ]
-            ),
-
-
-        # --------------------------------------------------
-        # CLAIM HISTORY
-        # --------------------------------------------------
-
-        "TOTAL_CLAIMS":
-            float(
-                row[
-                    "total_claims"
-                ]
-            ),
-
-        "TOTAL_CLAIM_AMOUNT":
-            float(
-                row[
-                    "total_claim_amount"
-                ]
-            ),
-
-        "AVG_CLAIM_AMOUNT":
-            float(
-                row[
-                    "avg_claim_amount"
-                ]
-            ),
-
-        "MAX_CLAIM_AMOUNT":
-            float(
-                row[
-                    "max_claim_amount"
-                ]
-            ),
-
-
-        # --------------------------------------------------
-        # CATEGORICAL
-        # --------------------------------------------------
-
-        "GENDER":
-            str(
-                row[
-                    "gender"
-                ]
-            ),
-
-        "MARITAL_STATUS":
-            str(
-                row[
-                    "marital_status"
-                ]
-            ),
-
-        "OCCUPATION":
-            str(
-                row[
-                    "occupation"
-                ]
-            ),
-
-        "STATE":
-            str(
-                row[
-                    "state"
-                ]
-            ),
-
-        "CUSTOMER_RISK_SEGMENT":
-            str(
-                row[
-                    "customer_risk_segment"
-                ]
-            ),
-
-        "POLICY_TYPE":
-            str(
-                row[
-                    "policy_type"
-                ]
-            ),
-
-        "SALES_CHANNEL":
-            str(
-                row[
-                    "sales_channel"
-                ]
-            ),
-
-        "PAYMENT_MODE":
-            str(
-                row[
-                    "payment_mode"
-                ]
-            ),
-
-        "RISK_BAND":
-            str(
-                row[
-                    "risk_band"
-                ]
-            ),
-    }
-
-
-    # ======================================================
-    # RETURN
-    # ======================================================
-
-    return {
-
-        "policy_id":
-            row[
-                "policy_id"
-            ],
-
-        "renewal_id":
-            row[
-                "renewal_id"
-            ],
-
-        "customer_id":
-            row[
-                "customer_id"
-            ],
-
-        "model_features":
-            model_features,
-
-        # Keep actual outcome separate.
-        # NEVER send this into the model.
-
-        "actual_renewal_status":
-            row[
-                "renewal_status"
-            ],
-    }
-
-
-# ==========================================================
-# SIMPLE FEATURE FUNCTION
-# ==========================================================
-
-def get_renewal_features_by_policy_id(
-    policy_id: str,
-):
-
-    result = (
-        get_renewal_case_by_policy_id(
-            policy_id
+        sum_insured = float(
+            policy["SUM_INSURED"]
         )
-    )
 
+        annual_premium = float(
+            policy["ANNUAL_PREMIUM"]
+        )
 
-    return result[
-        "model_features"
-    ]
+        risk_score = float(
+            policy["RISK_SCORE"]
+        )
 
+        discount_pct = float(
+            policy["DISCOUNT_PCT"]
+        )
 
-# ==========================================================
-# MANUAL TEST
-# ==========================================================
+        commission_pct = float(
+            policy["COMMISSION_PCT"]
+        )
 
-if __name__ == "__main__":
+        # ====================================================
+        # POLICY TENURE
+        # ====================================================
 
-    from pprint import pprint
+        if (
+            pd.notna(renewal_due_date)
+            and pd.notna(policy_start_date)
+        ):
 
+            policy_tenure_days = (
+                renewal_due_date
+                - policy_start_date
+            ).days
 
-    query = text(
-        """
-        SELECT policy_id
-        FROM public.renewals
-        ORDER BY policy_id
-        LIMIT 1
-        """
-    )
+        else:
 
+            policy_tenure_days = np.nan
 
-    with engine.connect() as connection:
+        if pd.notna(policy_tenure_days):
 
-        policy_id = (
-            connection.execute(
-                query
+            policy_tenure_years = (
+                policy_tenure_days / 365.25
             )
-            .scalar()
+
+        else:
+
+            policy_tenure_years = np.nan
+
+        # ====================================================
+        # PREMIUM RATIOS
+        # ====================================================
+
+        if sum_insured > 0:
+
+            premium_to_sum_insured = (
+                annual_premium
+                / sum_insured
+            )
+
+        else:
+
+            premium_to_sum_insured = np.nan
+
+        discounted_premium_ratio = (
+            1 - discount_pct / 100
         )
 
+        # ====================================================
+        # PAYMENT HISTORY
+        # ====================================================
 
-    print(
-        "\nTesting Policy:",
-        policy_id,
-    )
+        # Only transactions whose DUE_DATE is on or before
+        # the renewal decision date are used.
 
+        policy_premiums = self.premiums[
+            (
+                self.premiums["POLICY_ID"]
+                == policy_id
+            )
+            &
+            (
+                self.premiums["DUE_DATE"]
+                <= renewal_due_date
+            )
+        ].copy()
 
-    result = (
-        get_renewal_case_by_policy_id(
-            policy_id
+        total_payment_txns_prior = (
+            len(policy_premiums)
         )
-    )
+
+        # ====================================================
+        # NO PAYMENT HISTORY
+        # ====================================================
+
+        if total_payment_txns_prior == 0:
+
+            paid_txns_prior = 0
+
+            failed_txns_prior = 0
+
+            overdue_txns_prior = 0
+
+            avg_payment_delay_prior = None
+
+            max_payment_delay_prior = None
+
+            total_premium_prior = 0.0
+
+            avg_premium_prior = None
+
+        # ====================================================
+        # PAYMENT HISTORY EXISTS
+        # ====================================================
+
+        else:
+
+            payment_status = (
+                policy_premiums[
+                    "PAYMENT_STATUS"
+                ]
+                .astype(str)
+                .str.strip()
+                .str.upper()
+            )
+
+            # ------------------------------------------------
+            # Payment status groups
+            # ------------------------------------------------
+
+            paid_statuses = {
+                "PAID",
+                "SUCCESS",
+                "SUCCESSFUL",
+                "COMPLETED",
+            }
+
+            failed_statuses = {
+                "FAILED",
+                "FAIL",
+                "FAILURE",
+                "REJECTED",
+                "DECLINED",
+            }
+
+            overdue_statuses = {
+                "OVERDUE",
+                "LATE",
+            }
+
+            # ------------------------------------------------
+            # Status masks
+            # ------------------------------------------------
+
+            paid_mask = (
+                payment_status
+                .isin(paid_statuses)
+            )
+
+            failed_mask = (
+                payment_status
+                .isin(failed_statuses)
+            )
+
+            overdue_mask = (
+                payment_status
+                .isin(overdue_statuses)
+            )
+
+            # ------------------------------------------------
+            # Counts
+            # ------------------------------------------------
+
+            paid_txns_prior = int(
+                paid_mask.sum()
+            )
+
+            failed_txns_prior = int(
+                failed_mask.sum()
+            )
+
+            overdue_txns_prior = int(
+                overdue_mask.sum()
+            )
+
+            # =================================================
+            # PAYMENT DELAY
+            # =================================================
+
+            policy_premiums[
+                "PAYMENT_DELAY_DAYS"
+            ] = pd.to_numeric(
+                policy_premiums[
+                    "PAYMENT_DELAY_DAYS"
+                ],
+                errors="coerce",
+            )
+
+            # Only use payment delays when the payment
+            # itself was known by the renewal date.
+
+            known_delay_mask = (
+                policy_premiums[
+                    "PAID_DATE"
+                ].notna()
+                &
+                (
+                    policy_premiums[
+                        "PAID_DATE"
+                    ]
+                    <= renewal_due_date
+                )
+            )
+
+            known_delays = (
+                policy_premiums.loc[
+                    known_delay_mask,
+                    "PAYMENT_DELAY_DAYS",
+                ]
+            )
+
+            if known_delays.empty:
+
+                avg_payment_delay_prior = None
+
+                max_payment_delay_prior = None
+
+            else:
+
+                avg_payment_delay_prior = float(
+                    known_delays.mean()
+                )
+
+                max_payment_delay_prior = float(
+                    known_delays.max()
+                )
+
+            # =================================================
+            # PREMIUM HISTORY
+            # =================================================
+
+            policy_premiums[
+                "PREMIUM_AMOUNT"
+            ] = pd.to_numeric(
+                policy_premiums[
+                    "PREMIUM_AMOUNT"
+                ],
+                errors="coerce",
+            )
+
+            total_premium_prior = float(
+                policy_premiums[
+                    "PREMIUM_AMOUNT"
+                ].sum()
+            )
+
+            avg_premium_prior = float(
+                policy_premiums[
+                    "PREMIUM_AMOUNT"
+                ].mean()
+            )
+
+        # ====================================================
+        # PAYMENT RATES
+        # ====================================================
+
+        if total_payment_txns_prior > 0:
+
+            paid_rate_prior = (
+                paid_txns_prior
+                / total_payment_txns_prior
+            )
+
+            failed_rate_prior = (
+                failed_txns_prior
+                / total_payment_txns_prior
+            )
+
+            overdue_rate_prior = (
+                overdue_txns_prior
+                / total_payment_txns_prior
+            )
+
+        else:
+
+            paid_rate_prior = None
+
+            failed_rate_prior = None
+
+            overdue_rate_prior = None
+
+        # ====================================================
+        # PREMIUM PAYMENT RATIO
+        # ====================================================
+
+        if total_premium_prior > 0:
+
+            premium_payment_ratio = (
+                old_premium
+                / total_premium_prior
+            )
+
+        else:
+
+            premium_payment_ratio = None
+
+        # ====================================================
+        # FINAL 32 FEATURES
+        # ====================================================
+
+        features = {
+
+            # ------------------------------------------------
+            # Numeric features
+            # ------------------------------------------------
+
+            "OLD_PREMIUM":
+                old_premium,
+
+            "NEW_PREMIUM":
+                new_premium,
+
+            "PREMIUM_INCREASE_PCT":
+                premium_increase_pct,
+
+            "PREMIUM_INCREASE_AMOUNT":
+                premium_increase_amount,
+
+            "LOYALTY_YEARS":
+                loyalty_years,
+
+            "CLAIM_HISTORY_FLAG":
+                claim_history_flag,
+
+            "SUM_INSURED":
+                sum_insured,
+
+            "ANNUAL_PREMIUM":
+                annual_premium,
+
+            "RISK_SCORE":
+                risk_score,
+
+            "DISCOUNT_PCT":
+                discount_pct,
+
+            "COMMISSION_PCT":
+                commission_pct,
+
+            "POLICY_TENURE_DAYS":
+                policy_tenure_days,
+
+            "POLICY_TENURE_YEARS":
+                policy_tenure_years,
+
+            "PREMIUM_TO_SUM_INSURED":
+                premium_to_sum_insured,
+
+            "DISCOUNTED_PREMIUM_RATIO":
+                discounted_premium_ratio,
+
+            "TOTAL_PAYMENT_TXNS_PRIOR":
+                total_payment_txns_prior,
+
+            "PAID_TXNS_PRIOR":
+                paid_txns_prior,
+
+            "FAILED_TXNS_PRIOR":
+                failed_txns_prior,
+
+            "OVERDUE_TXNS_PRIOR":
+                overdue_txns_prior,
+
+            "AVG_PAYMENT_DELAY_PRIOR":
+                avg_payment_delay_prior,
+
+            "MAX_PAYMENT_DELAY_PRIOR":
+                max_payment_delay_prior,
+
+            "TOTAL_PREMIUM_PRIOR":
+                total_premium_prior,
+
+            "AVG_PREMIUM_PRIOR":
+                avg_premium_prior,
+
+            "PAID_RATE_PRIOR":
+                paid_rate_prior,
+
+            "FAILED_RATE_PRIOR":
+                failed_rate_prior,
+
+            "OVERDUE_RATE_PRIOR":
+                overdue_rate_prior,
+
+            "PREMIUM_PAYMENT_RATIO":
+                premium_payment_ratio,
+
+            # ------------------------------------------------
+            # Categorical features
+            # ------------------------------------------------
+
+            "POLICY_TYPE":
+                policy["POLICY_TYPE"],
+
+            "PAYMENT_MODE":
+                policy["PAYMENT_MODE"],
+
+            "SALES_CHANNEL":
+                policy["SALES_CHANNEL"],
+
+            "CONTACT_CHANNEL":
+                renewal["CONTACT_CHANNEL"],
+
+            "RISK_BAND":
+                policy["RISK_BAND"],
+        }
+
+        return features
 
 
-    pprint(
-        result
+# ============================================================
+# SINGLETON
+# ============================================================
+
+_feature_service = None
+
+
+def get_feature_service():
+
+    global _feature_service
+
+    if _feature_service is None:
+
+        _feature_service = (
+            RenewalFeatureService()
+        )
+
+    return _feature_service
+
+
+# ============================================================
+# PUBLIC FUNCTION
+# ============================================================
+
+def build_renewal_features(policy_id):
+
+    service = get_feature_service()
+
+    return service.build_features(
+        policy_id
     )

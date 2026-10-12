@@ -44,9 +44,7 @@ from src.data.fraud_feature_service import (
     get_fraud_case_by_claim_id,
 )
 
-from src.data.renewal_feature_service import (
-    get_renewal_case_by_policy_id,
-)
+from src.data.renewal_feature_service import build_renewal_features
 
 from src.data.underwriting_feature_service import (
     get_underwriting_case_by_id,
@@ -82,7 +80,7 @@ from src.monitoring.performance_service import (
 # MODEL VERSIONS
 # ==========================================================
 
-RENEWAL_MODEL_VERSION = "v1.0"
+RENEWAL_MODEL_VERSION = "v3.0"
 FRAUD_MODEL_VERSION = "v1.0"
 UNDERWRITING_MODEL_VERSION = "v1.0"
 
@@ -109,11 +107,8 @@ app = FastAPI(
 def home():
 
     return {
-        "message":
-            "Insurance AI Copilot API is running",
-
-        "version":
-            "1.3.0",
+        "message": "Insurance AI Copilot API is running",
+        "version": "1.3.0",
     }
 
 
@@ -125,8 +120,9 @@ def home():
 def health():
 
     return {
-        "status":
-            "healthy"
+        "status": "healthy",
+        "renewal_model": "V3",
+        "renewal_model_version": RENEWAL_MODEL_VERSION,
     }
 
 
@@ -204,11 +200,9 @@ def get_fraud_prediction_label(
         )
     )
 
-
     if prediction is not None:
 
         return prediction
-
 
     fraud_probability = (
         result.get(
@@ -216,13 +210,11 @@ def get_fraud_prediction_label(
         )
     )
 
-
     threshold = (
         result.get(
             "threshold"
         )
     )
-
 
     if (
         fraud_probability is None
@@ -232,25 +224,15 @@ def get_fraud_prediction_label(
 
         return "Unknown"
 
-
     if (
-        float(
-            fraud_probability
-        )
+        float(fraud_probability)
         >=
-        float(
-            threshold
-        )
+        float(threshold)
     ):
 
-        return (
-            "Elevated Fraud Risk"
-        )
+        return "Elevated Fraud Risk"
 
-
-    return (
-        "No Elevated Fraud Risk"
-    )
+    return "No Elevated Fraud Risk"
 
 
 # ==========================================================
@@ -267,11 +249,9 @@ def get_renewal_prediction_label(
         )
     )
 
-
     if prediction is not None:
 
         return prediction
-
 
     churn_probability = (
         result.get(
@@ -279,13 +259,11 @@ def get_renewal_prediction_label(
         )
     )
 
-
     threshold = (
         result.get(
             "threshold"
         )
     )
-
 
     if (
         churn_probability is None
@@ -295,25 +273,15 @@ def get_renewal_prediction_label(
 
         return "Unknown"
 
-
     if (
-        float(
-            churn_probability
-        )
+        float(churn_probability)
         >=
-        float(
-            threshold
-        )
+        float(threshold)
     ):
 
-        return (
-            "Elevated Non-Renewal Risk"
-        )
+        return "Elevated Non-Renewal Risk"
 
-
-    return (
-        "Lower Non-Renewal Risk"
-    )
+    return "Lower Non-Renewal Risk"
 
 
 # ==========================================================
@@ -325,19 +293,12 @@ class UnderwritingRequest(
 ):
 
     AGE: int
-
     HEALTH_SCORE: float
-
     BMI: float
-
     CREDIT_SCORE: int
-
     LIFESTYLE: str
-
     MEDICAL_HISTORY_FLAG: str
-
     SMOKER_FLAG: str
-
     OCCUPATION_RISK: str
 
 
@@ -351,104 +312,75 @@ class FraudRequest(
 
     CLAIM_ID: str | None = None
 
-
     CLAIM_AMOUNT: float
-
     REPORTING_DELAY_DAYS: float
-
     INCIDENT_MONTH: int
-
     AGE: int
-
     ANNUAL_INCOME: float
-
     CREDIT_SCORE: int
-
     SUM_INSURED: float
-
     ANNUAL_PREMIUM: float
-
     RISK_SCORE: float
 
-
     CLAIM_TYPE: str
-
     SOURCE: str
-
     CLAIM_SEVERITY: str
-
     GENDER: str
-
     MARITAL_STATUS: str
-
     OCCUPATION: str
-
     STATE: str
-
     CUSTOMER_RISK_SEGMENT: str
-
     POLICY_TYPE: str
-
     PAYMENT_MODE: str
-
     RISK_BAND: str
 
 
 # ==========================================================
-# RENEWAL REQUEST
+# RENEWAL V3 REQUEST
 # ==========================================================
 
 class RenewalRequest(
     BaseModel
 ):
 
-    AGE: int
-
-    ANNUAL_INCOME: float
-
-    CREDIT_SCORE: int
+    OLD_PREMIUM: float
+    NEW_PREMIUM: float
+    PREMIUM_INCREASE_PCT: float
+    PREMIUM_INCREASE_AMOUNT: float
+    LOYALTY_YEARS: float
+    CLAIM_HISTORY_FLAG: float
 
     SUM_INSURED: float
-
     ANNUAL_PREMIUM: float
-
     RISK_SCORE: float
+    DISCOUNT_PCT: float
+    COMMISSION_PCT: float
 
-    PREMIUM_INCREASE_PCT: float
+    POLICY_TENURE_DAYS: float
+    POLICY_TENURE_YEARS: float
+    PREMIUM_TO_SUM_INSURED: float
+    DISCOUNTED_PREMIUM_RATIO: float
 
-    CUSTOMER_TENURE_YEARS: float
+    TOTAL_PAYMENT_TXNS_PRIOR: float
+    PAID_TXNS_PRIOR: float
+    FAILED_TXNS_PRIOR: float
+    OVERDUE_TXNS_PRIOR: float
 
-    TOTAL_PAYMENTS: float
+    AVG_PAYMENT_DELAY_PRIOR: float | None = None
+    MAX_PAYMENT_DELAY_PRIOR: float | None = None
 
-    AVG_PAYMENT_DELAY: float
+    TOTAL_PREMIUM_PRIOR: float
+    AVG_PREMIUM_PRIOR: float
 
-    MAX_PAYMENT_DELAY: float
-
-    TOTAL_CLAIMS: float
-
-    TOTAL_CLAIM_AMOUNT: float
-
-    AVG_CLAIM_AMOUNT: float
-
-    MAX_CLAIM_AMOUNT: float
-
-
-    GENDER: str
-
-    MARITAL_STATUS: str
-
-    OCCUPATION: str
-
-    STATE: str
-
-    CUSTOMER_RISK_SEGMENT: str
+    PAID_RATE_PRIOR: float
+    FAILED_RATE_PRIOR: float
+    OVERDUE_RATE_PRIOR: float
+    PREMIUM_PAYMENT_RATIO: float
 
     POLICY_TYPE: str
-
-    SALES_CHANNEL: str
-
     PAYMENT_MODE: str
-
+    SALES_CHANNEL: str
+    CONTACT_CHANNEL: str
     RISK_BAND: str
 
 
@@ -514,7 +446,6 @@ class PredictionOutcomeRequest(
 ):
 
     prediction_id: int
-
     actual_class: str
 
     outcome_source: (
@@ -546,17 +477,11 @@ def underwriting_prediction(
         perf_counter()
     )
 
-
     applicant_data = (
         request.model_dump()
     )
 
-
     try:
-
-        # --------------------------------------------------
-        # PREDICTION
-        # --------------------------------------------------
 
         result = (
             predict_underwriting(
@@ -564,31 +489,20 @@ def underwriting_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # SHAP
-        # --------------------------------------------------
-
         try:
 
             explanation = (
                 explain_underwriting(
-
-                    input_data=
-                        applicant_data,
-
-                    top_n=
-                        5,
+                    input_data=applicant_data,
+                    top_n=5,
                 )
             )
-
 
             result[
                 "explainability"
             ] = {
 
-                "status":
-                    "success",
+                "status": "success",
 
                 "method":
                     explanation.get(
@@ -622,7 +536,6 @@ def underwriting_prediction(
                     ),
             }
 
-
         except Exception as error:
 
             result[
@@ -633,15 +546,8 @@ def underwriting_prediction(
                     "unavailable",
 
                 "error":
-                    str(
-                        error
-                    ),
+                    str(error),
             }
-
-
-        # --------------------------------------------------
-        # LATENCY
-        # --------------------------------------------------
 
         latency_ms = (
             calculate_latency_ms(
@@ -649,60 +555,28 @@ def underwriting_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # DECISION
-        # --------------------------------------------------
-
         decision = (
-
-            result.get(
-                "decision"
-            )
-
+            result.get("decision")
             or
-
-            result.get(
-                "prediction"
-            )
-
+            result.get("prediction")
             or
-
-            result.get(
-                "predicted_class"
-            )
-
+            result.get("predicted_class")
             or
-
             "Unknown"
         )
 
-
-        # --------------------------------------------------
-        # PROBABILITY
-        # --------------------------------------------------
-
         probability = None
 
-
         probabilities = (
-
             result.get(
                 "probabilities",
                 {},
             )
-
             or
-
             {}
         )
 
-
-        if (
-            decision
-            in
-            probabilities
-        ):
+        if decision in probabilities:
 
             probability = (
                 probabilities[
@@ -710,11 +584,9 @@ def underwriting_prediction(
                 ]
             )
 
-
         if probability is None:
 
             probability = (
-
                 result
                 .get(
                     "explainability",
@@ -724,11 +596,6 @@ def underwriting_prediction(
                     "predicted_probability"
                 )
             )
-
-
-        # --------------------------------------------------
-        # LOG PREDICTION
-        # --------------------------------------------------
 
         prediction_id = (
             log_prediction(
@@ -743,15 +610,12 @@ def underwriting_prediction(
                     "/predict/underwriting",
 
                 predicted_class=
-                    str(
-                        decision
-                    ),
+                    str(decision),
 
                 probability=
                     probability,
 
-                threshold=
-                    None,
+                threshold=None,
 
                 feature_snapshot=
                     applicant_data,
@@ -770,11 +634,6 @@ def underwriting_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # MONITORING
-        # --------------------------------------------------
-
         result[
             "monitoring"
         ] = {
@@ -789,9 +648,7 @@ def underwriting_prediction(
                 latency_ms,
         }
 
-
         return result
-
 
     except Exception as error:
 
@@ -800,7 +657,6 @@ def underwriting_prediction(
                 start_time
             )
         )
-
 
         log_prediction(
 
@@ -823,11 +679,8 @@ def underwriting_prediction(
                 "error",
 
             error_message=
-                str(
-                    error
-                ),
+                str(error),
         )
-
 
         raise
 
@@ -844,24 +697,9 @@ def underwriting_prediction_by_id(
     underwriting_id: str,
 ):
 
-    """
-    Only UNDERWRITING_ID is supplied.
-
-    Features come from database.
-
-    DECISION is kept separate
-    as ground truth.
-    """
-
-
     start_time = (
         perf_counter()
     )
-
-
-    # ------------------------------------------------------
-    # LOAD REAL DATABASE CASE
-    # ------------------------------------------------------
 
     try:
 
@@ -871,24 +709,12 @@ def underwriting_prediction_by_id(
             )
         )
 
-
     except ValueError as error:
 
         raise HTTPException(
-
-            status_code=
-                404,
-
-            detail=
-                str(
-                    error
-                ),
+            status_code=404,
+            detail=str(error),
         )
-
-
-    # ------------------------------------------------------
-    # MODEL FEATURES ONLY
-    # ------------------------------------------------------
 
     applicant_data = (
         underwriting_case[
@@ -896,18 +722,7 @@ def underwriting_prediction_by_id(
         ]
     )
 
-
-    # actual_decision is intentionally
-    # NOT passed to the model.
-    #
-    # It is ground truth.
-
-
     try:
-
-        # --------------------------------------------------
-        # PREDICTION
-        # --------------------------------------------------
 
         result = (
             predict_underwriting(
@@ -915,24 +730,14 @@ def underwriting_prediction_by_id(
             )
         )
 
-
-        # --------------------------------------------------
-        # SHAP
-        # --------------------------------------------------
-
         try:
 
             explanation = (
                 explain_underwriting(
-
-                    input_data=
-                        applicant_data,
-
-                    top_n=
-                        5,
+                    input_data=applicant_data,
+                    top_n=5,
                 )
             )
-
 
             result[
                 "explainability"
@@ -973,7 +778,6 @@ def underwriting_prediction_by_id(
                     ),
             }
 
-
         except Exception as error:
 
             result[
@@ -984,15 +788,8 @@ def underwriting_prediction_by_id(
                     "unavailable",
 
                 "error":
-                    str(
-                        error
-                    ),
+                    str(error),
             }
-
-
-        # --------------------------------------------------
-        # LATENCY
-        # --------------------------------------------------
 
         latency_ms = (
             calculate_latency_ms(
@@ -1000,60 +797,28 @@ def underwriting_prediction_by_id(
             )
         )
 
-
-        # --------------------------------------------------
-        # DECISION
-        # --------------------------------------------------
-
         decision = (
-
-            result.get(
-                "decision"
-            )
-
+            result.get("decision")
             or
-
-            result.get(
-                "prediction"
-            )
-
+            result.get("prediction")
             or
-
-            result.get(
-                "predicted_class"
-            )
-
+            result.get("predicted_class")
             or
-
             "Unknown"
         )
 
-
-        # --------------------------------------------------
-        # PROBABILITY
-        # --------------------------------------------------
-
         probability = None
 
-
         probabilities = (
-
             result.get(
                 "probabilities",
                 {},
             )
-
             or
-
             {}
         )
 
-
-        if (
-            decision
-            in
-            probabilities
-        ):
+        if decision in probabilities:
 
             probability = (
                 probabilities[
@@ -1061,11 +826,9 @@ def underwriting_prediction_by_id(
                 ]
             )
 
-
         if probability is None:
 
             probability = (
-
                 result
                 .get(
                     "explainability",
@@ -1075,11 +838,6 @@ def underwriting_prediction_by_id(
                     "predicted_probability"
                 )
             )
-
-
-        # --------------------------------------------------
-        # FEATURE SNAPSHOT
-        # --------------------------------------------------
 
         feature_snapshot = {
 
@@ -1101,11 +859,6 @@ def underwriting_prediction_by_id(
             **applicant_data,
         }
 
-
-        # --------------------------------------------------
-        # LOG PREDICTION
-        # --------------------------------------------------
-
         prediction_id = (
             log_prediction(
 
@@ -1119,15 +872,12 @@ def underwriting_prediction_by_id(
                     "/predict/underwriting/by-id",
 
                 predicted_class=
-                    str(
-                        decision
-                    ),
+                    str(decision),
 
                 probability=
                     probability,
 
-                threshold=
-                    None,
+                threshold=None,
 
                 feature_snapshot=
                     feature_snapshot,
@@ -1145,11 +895,6 @@ def underwriting_prediction_by_id(
                     "success",
             )
         )
-
-
-        # --------------------------------------------------
-        # MONITORING
-        # --------------------------------------------------
 
         result[
             "monitoring"
@@ -1183,14 +928,10 @@ def underwriting_prediction_by_id(
                 "database",
         }
 
-
         return result
 
-
     except HTTPException:
-
         raise
-
 
     except Exception as error:
 
@@ -1199,7 +940,6 @@ def underwriting_prediction_by_id(
                 start_time
             )
         )
-
 
         log_prediction(
 
@@ -1212,14 +952,11 @@ def underwriting_prediction_by_id(
             endpoint=
                 "/predict/underwriting/by-id",
 
-            predicted_class=
-                None,
+            predicted_class=None,
 
-            probability=
-                None,
+            probability=None,
 
-            threshold=
-                None,
+            threshold=None,
 
             feature_snapshot={
 
@@ -1229,8 +966,7 @@ def underwriting_prediction_by_id(
                 **applicant_data,
             },
 
-            explainability=
-                None,
+            explainability=None,
 
             latency_ms=
                 latency_ms,
@@ -1239,21 +975,12 @@ def underwriting_prediction_by_id(
                 "error",
 
             error_message=
-                str(
-                    error
-                ),
+                str(error),
         )
 
-
         raise HTTPException(
-
-            status_code=
-                500,
-
-            detail=
-                str(
-                    error
-                ),
+            status_code=500,
+            detail=str(error),
         )
 
 
@@ -1267,26 +994,11 @@ def run_fraud_prediction(
     endpoint: str,
 ):
 
-    """
-    Common fraud prediction pipeline.
-
-    claim_data contains model features only.
-
-    CLAIM_ID is used for monitoring
-    and ground-truth matching.
-    """
-
-
     start_time = (
         perf_counter()
     )
 
-
     try:
-
-        # --------------------------------------------------
-        # PREDICTION
-        # --------------------------------------------------
 
         result = (
             predict_fraud(
@@ -1294,24 +1006,14 @@ def run_fraud_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # SHAP
-        # --------------------------------------------------
-
         try:
 
             explanation = (
                 explain_fraud(
-
-                    input_data=
-                        claim_data,
-
-                    top_n=
-                        5,
+                    input_data=claim_data,
+                    top_n=5,
                 )
             )
-
 
             result[
                 "explainability"
@@ -1320,7 +1022,6 @@ def run_fraud_prediction(
                     explanation
                 )
             )
-
 
         except Exception as error:
 
@@ -1332,15 +1033,8 @@ def run_fraud_prediction(
                     "unavailable",
 
                 "error":
-                    str(
-                        error
-                    ),
+                    str(error),
             }
-
-
-        # --------------------------------------------------
-        # LATENCY
-        # --------------------------------------------------
 
         latency_ms = (
             calculate_latency_ms(
@@ -1348,17 +1042,11 @@ def run_fraud_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # VALUES
-        # --------------------------------------------------
-
         fraud_probability = (
             result.get(
                 "fraud_probability"
             )
         )
-
 
         threshold = (
             result.get(
@@ -1366,17 +1054,11 @@ def run_fraud_prediction(
             )
         )
 
-
         prediction = (
             get_fraud_prediction_label(
                 result
             )
         )
-
-
-        # --------------------------------------------------
-        # LOG
-        # --------------------------------------------------
 
         prediction_id = (
             log_prediction(
@@ -1391,9 +1073,7 @@ def run_fraud_prediction(
                     endpoint,
 
                 predicted_class=
-                    str(
-                        prediction
-                    ),
+                    str(prediction),
 
                 probability=
                     fraud_probability,
@@ -1423,7 +1103,6 @@ def run_fraud_prediction(
             )
         )
 
-
         result[
             "monitoring"
         ] = {
@@ -1441,9 +1120,7 @@ def run_fraud_prediction(
                 latency_ms,
         }
 
-
         return result
-
 
     except Exception as error:
 
@@ -1452,7 +1129,6 @@ def run_fraud_prediction(
                 start_time
             )
         )
-
 
         log_prediction(
 
@@ -1480,11 +1156,8 @@ def run_fraud_prediction(
                 "error",
 
             error_message=
-                str(
-                    error
-                ),
+                str(error),
         )
-
 
         raise
 
@@ -1505,7 +1178,6 @@ def fraud_prediction(
         request.model_dump()
     )
 
-
     claim_id = (
         request_data.pop(
             "CLAIM_ID",
@@ -1513,11 +1185,9 @@ def fraud_prediction(
         )
     )
 
-
     claim_data = (
         request_data
     )
-
 
     return (
         run_fraud_prediction(
@@ -1546,16 +1216,6 @@ def fraud_prediction_by_claim(
     claim_id: str,
 ):
 
-    """
-    Only CLAIM_ID is supplied.
-
-    Features come from database.
-
-    fraud_flag is kept separate
-    as ground truth.
-    """
-
-
     try:
 
         fraud_case = (
@@ -1564,27 +1224,18 @@ def fraud_prediction_by_claim(
             )
         )
 
-
     except ValueError as error:
 
         raise HTTPException(
-
-            status_code=
-                404,
-
-            detail=
-                str(
-                    error
-                ),
+            status_code=404,
+            detail=str(error),
         )
-
 
     claim_data = (
         fraud_case[
             "model_features"
         ]
     )
-
 
     try:
 
@@ -1602,7 +1253,6 @@ def fraud_prediction_by_claim(
             )
         )
 
-
         result[
             "monitoring"
         ][
@@ -1611,32 +1261,22 @@ def fraud_prediction_by_claim(
             "database"
         )
 
-
         return result
 
-
     except HTTPException:
-
         raise
-
 
     except Exception as error:
 
         raise HTTPException(
-
-            status_code=
-                500,
-
-            detail=
-                str(
-                    error
-                ),
+            status_code=500,
+            detail=str(error),
         )
 
 
 # ==========================================================
 # RENEWAL ENDPOINT
-# MANUAL FEATURES
+# MANUAL V3 FEATURES
 # ==========================================================
 
 @app.post(
@@ -1650,17 +1290,11 @@ def renewal_prediction(
         perf_counter()
     )
 
-
     customer_data = (
         request.model_dump()
     )
 
-
     try:
-
-        # --------------------------------------------------
-        # PREDICTION
-        # --------------------------------------------------
 
         result = (
             predict_renewal(
@@ -1668,24 +1302,14 @@ def renewal_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # SHAP
-        # --------------------------------------------------
-
         try:
 
             explanation = (
                 explain_renewal(
-
-                    input_data=
-                        customer_data,
-
-                    top_n=
-                        5,
+                    input_data=customer_data,
+                    top_n=5,
                 )
             )
-
 
             result[
                 "explainability"
@@ -1694,7 +1318,6 @@ def renewal_prediction(
                     explanation
                 )
             )
-
 
         except Exception as error:
 
@@ -1706,15 +1329,8 @@ def renewal_prediction(
                     "unavailable",
 
                 "error":
-                    str(
-                        error
-                    ),
+                    str(error),
             }
-
-
-        # --------------------------------------------------
-        # LATENCY
-        # --------------------------------------------------
 
         latency_ms = (
             calculate_latency_ms(
@@ -1722,17 +1338,11 @@ def renewal_prediction(
             )
         )
 
-
-        # --------------------------------------------------
-        # VALUES
-        # --------------------------------------------------
-
         churn_probability = (
             result.get(
                 "churn_probability"
             )
         )
-
 
         threshold = (
             result.get(
@@ -1740,17 +1350,11 @@ def renewal_prediction(
             )
         )
 
-
         prediction = (
             get_renewal_prediction_label(
                 result
             )
         )
-
-
-        # --------------------------------------------------
-        # LOG
-        # --------------------------------------------------
 
         prediction_id = (
             log_prediction(
@@ -1765,9 +1369,7 @@ def renewal_prediction(
                     "/predict/renewal",
 
                 predicted_class=
-                    str(
-                        prediction
-                    ),
+                    str(prediction),
 
                 probability=
                     churn_probability,
@@ -1792,7 +1394,6 @@ def renewal_prediction(
             )
         )
 
-
         result[
             "monitoring"
         ] = {
@@ -1805,11 +1406,12 @@ def renewal_prediction(
 
             "latency_ms":
                 latency_ms,
+
+            "feature_source":
+                "manual_v3",
         }
 
-
         return result
-
 
     except Exception as error:
 
@@ -1818,7 +1420,6 @@ def renewal_prediction(
                 start_time
             )
         )
-
 
         log_prediction(
 
@@ -1841,18 +1442,15 @@ def renewal_prediction(
                 "error",
 
             error_message=
-                str(
-                    error
-                ),
+                str(error),
         )
-
 
         raise
 
 
 # ==========================================================
 # RENEWAL ENDPOINT
-# REAL DATABASE FEATURES BY POLICY ID
+# REAL DATABASE FEATURES BY POLICY ID - V3
 # ==========================================================
 
 @app.post(
@@ -1861,336 +1459,148 @@ def renewal_prediction(
 def renewal_prediction_by_policy(
     policy_id: str,
 ):
-
     """
+    Predict renewal/churn risk for a policy using the V3
+    time-safe feature service.
+
     Only POLICY_ID is supplied.
 
-    Features are loaded automatically from:
+    V3 features are generated automatically from:
+    renewals + customers + policies + premium history + claim history.
 
-    renewals
-    + customers
-    + policies
-    + premium history
-    + claim history
+    Payment history is time-safe:
+    only information known by RENEWAL_DUE_DATE is used.
 
-    renewal_status is NOT sent to model.
-
-    It remains ground truth.
+    renewal_status is never sent to the model.
     """
 
-
-    start_time = (
-        perf_counter()
-    )
-
-
-    # ------------------------------------------------------
-    # LOAD DATABASE FEATURES
-    # ------------------------------------------------------
+    start_time = perf_counter()
+    customer_data = {}
 
     try:
+        # ------------------------------------------------------
+        # BUILD TIME-SAFE V3 FEATURES
+        # ------------------------------------------------------
+        customer_data = build_renewal_features(policy_id)
 
-        renewal_case = (
-            get_renewal_case_by_policy_id(
-                policy_id
+        if not customer_data:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No renewal features found for policy {policy_id}",
             )
-        )
 
-
-    except ValueError as error:
-
-        raise HTTPException(
-
-            status_code=
-                404,
-
-            detail=
-                str(
-                    error
-                ),
-        )
-
-
-    # ------------------------------------------------------
-    # MODEL FEATURES ONLY
-    # ------------------------------------------------------
-
-    customer_data = (
-        renewal_case[
-            "model_features"
-        ]
-    )
-
-
-    try:
-
-        # --------------------------------------------------
+        # ------------------------------------------------------
         # MODEL PREDICTION
-        # --------------------------------------------------
+        # ------------------------------------------------------
+        result = predict_renewal(customer_data)
 
-        result = (
-            predict_renewal(
-                customer_data
-            )
-        )
-
-
-        # --------------------------------------------------
-        # SHAP
-        # --------------------------------------------------
-
+        # ------------------------------------------------------
+        # EXPLAINABILITY
+        # ------------------------------------------------------
         try:
-
-            explanation = (
-                explain_renewal(
-
-                    input_data=
-                        customer_data,
-
-                    top_n=
-                        5,
-                )
+            explanation = explain_renewal(
+                input_data=customer_data,
+                top_n=5,
             )
 
-
-            result[
-                "explainability"
-            ] = (
-                build_simple_explanation(
-                    explanation
-                )
+            result["explainability"] = build_simple_explanation(
+                explanation
             )
-
 
         except Exception as error:
-
-            result[
-                "explainability"
-            ] = {
-
-                "status":
-                    "unavailable",
-
-                "error":
-                    str(
-                        error
-                    ),
+            result["explainability"] = {
+                "status": "unavailable",
+                "error": str(error),
             }
 
-
-        # --------------------------------------------------
+        # ------------------------------------------------------
         # LATENCY
-        # --------------------------------------------------
+        # ------------------------------------------------------
+        latency_ms = calculate_latency_ms(start_time)
 
-        latency_ms = (
-            calculate_latency_ms(
-                start_time
-            )
-        )
+        # ------------------------------------------------------
+        # PREDICTION VALUES
+        # ------------------------------------------------------
+        churn_probability = result.get("churn_probability")
+        threshold = result.get("threshold")
 
+        prediction = get_renewal_prediction_label(result)
 
-        # --------------------------------------------------
-        # VALUES
-        # --------------------------------------------------
-
-        churn_probability = (
-            result.get(
-                "churn_probability"
-            )
-        )
-
-
-        threshold = (
-            result.get(
-                "threshold"
-            )
-        )
-
-
-        prediction = (
-            get_renewal_prediction_label(
-                result
-            )
-        )
-
-
-        # --------------------------------------------------
+        # ------------------------------------------------------
         # FEATURE SNAPSHOT
-        # --------------------------------------------------
-
+        # ------------------------------------------------------
         feature_snapshot = {
-
-            "POLICY_ID":
-                renewal_case[
-                    "policy_id"
-                ],
-
-            "RENEWAL_ID":
-                renewal_case[
-                    "renewal_id"
-                ],
-
-            "CUSTOMER_ID":
-                renewal_case[
-                    "customer_id"
-                ],
-
+            "POLICY_ID": policy_id,
             **customer_data,
         }
 
-
-        # --------------------------------------------------
+        # ------------------------------------------------------
         # LOG PREDICTION
-        # --------------------------------------------------
-
-        prediction_id = (
-            log_prediction(
-
-                model_name=
-                    "renewal",
-
-                model_version=
-                    RENEWAL_MODEL_VERSION,
-
-                endpoint=
-                    "/predict/renewal/by-policy",
-
-                predicted_class=
-                    str(
-                        prediction
-                    ),
-
-                probability=
-                    churn_probability,
-
-                threshold=
-                    threshold,
-
-                feature_snapshot=
-                    feature_snapshot,
-
-                explainability=
-                    result.get(
-                        "explainability",
-                        {},
-                    ),
-
-                latency_ms=
-                    latency_ms,
-
-                status=
-                    "success",
-            )
+        # ------------------------------------------------------
+        prediction_id = log_prediction(
+            model_name="renewal",
+            model_version=RENEWAL_MODEL_VERSION,
+            endpoint="/predict/renewal/by-policy",
+            predicted_class=str(prediction),
+            probability=churn_probability,
+            threshold=threshold,
+            feature_snapshot=feature_snapshot,
+            explainability=result.get(
+                "explainability",
+                {},
+            ),
+            latency_ms=latency_ms,
+            status="success",
         )
 
-
-        # --------------------------------------------------
+        # ------------------------------------------------------
         # MONITORING
-        # --------------------------------------------------
-
-        result[
-            "monitoring"
-        ] = {
-
-            "prediction_id":
-                prediction_id,
-
-            "model_version":
-                RENEWAL_MODEL_VERSION,
-
-            "policy_id":
-                renewal_case[
-                    "policy_id"
-                ],
-
-            "renewal_id":
-                renewal_case[
-                    "renewal_id"
-                ],
-
-            "customer_id":
-                renewal_case[
-                    "customer_id"
-                ],
-
-            "latency_ms":
-                latency_ms,
-
-            "feature_source":
-                "database",
+        # ------------------------------------------------------
+        result["monitoring"] = {
+            "prediction_id": prediction_id,
+            "model_version": RENEWAL_MODEL_VERSION,
+            "policy_id": policy_id,
+            "latency_ms": latency_ms,
+            "feature_source": "renewal_v3_feature_service",
         }
 
+        # ------------------------------------------------------
+        # RETURN FEATURES FOR UI
+        # ------------------------------------------------------
+        result["policy_id"] = policy_id
+        result["features"] = customer_data
 
         return result
 
-
     except HTTPException:
-
         raise
 
-
     except Exception as error:
+        latency_ms = calculate_latency_ms(start_time)
 
-        latency_ms = (
-            calculate_latency_ms(
-                start_time
+        try:
+            log_prediction(
+                model_name="renewal",
+                model_version=RENEWAL_MODEL_VERSION,
+                endpoint="/predict/renewal/by-policy",
+                predicted_class=None,
+                probability=None,
+                threshold=None,
+                feature_snapshot={
+                    "POLICY_ID": policy_id,
+                    **customer_data,
+                },
+                explainability=None,
+                latency_ms=latency_ms,
+                status="error",
+                error_message=str(error),
             )
-        )
-
-
-        log_prediction(
-
-            model_name=
-                "renewal",
-
-            model_version=
-                RENEWAL_MODEL_VERSION,
-
-            endpoint=
-                "/predict/renewal/by-policy",
-
-            predicted_class=
-                None,
-
-            probability=
-                None,
-
-            threshold=
-                None,
-
-            feature_snapshot={
-
-                "POLICY_ID":
-                    policy_id,
-
-                **customer_data,
-            },
-
-            explainability=
-                None,
-
-            latency_ms=
-                latency_ms,
-
-            status=
-                "error",
-
-            error_message=
-                str(
-                    error
-                ),
-        )
-
+        except Exception:
+            pass
 
         raise HTTPException(
-
-            status_code=
-                500,
-
-            detail=
-                str(
-                    error
-                ),
+            status_code=500,
+            detail=str(error),
         )
 
 
@@ -2278,7 +1688,6 @@ def clear_copilot_session_endpoint(
         )
     )
 
-
     return {
 
         "session_id":
@@ -2288,13 +1697,9 @@ def clear_copilot_session_endpoint(
             cleared,
 
         "message": (
-
             "Conversation cleared."
-
             if cleared
-
             else
-
             (
                 "Session had no stored "
                 "conversation."
@@ -2350,7 +1755,6 @@ def monitoring_recent(
         ),
     )
 
-
     return (
         get_recent_predictions(
             limit=limit
@@ -2400,9 +1804,7 @@ def prediction_outcomes(
 
     return (
         get_prediction_outcomes(
-
-            model_name=
-                model_name
+            model_name=model_name
         )
     )
 
@@ -2472,16 +1874,9 @@ def monitoring_model_performance(
             )
         )
 
-
     except ValueError as error:
 
         raise HTTPException(
-
-            status_code=
-                400,
-
-            detail=
-                str(
-                    error
-                ),
+            status_code=400,
+            detail=str(error),
         )
